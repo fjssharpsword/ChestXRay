@@ -95,7 +95,7 @@ def VisualizationLesion(CKPT_PATH):
             gt_label = np.array(CLASS_NAMES)[gt_idx]
             gt_idx = np.where(idx.cpu().numpy()==gt_idx)[0][0]
             img_file = 'gt-{}-{:.4f}_pred-{}-{:.4f}'.format(gt_label, probs[gt_idx].cpu().item(), CLASS_NAMES[idx[0].item()], probs[0].cpu().item())
-            fig.savefig('./VisImgs/'+img_file+'.jpg')
+            fig.savefig('./Imgs/'+img_file+'.jpg')
             sys.stdout.write('\r Visualization process: = {}'.format(batch_idx+1))
             sys.stdout.flush()
 

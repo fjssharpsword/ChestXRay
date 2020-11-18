@@ -15,7 +15,7 @@ class TripletRankingLoss(nn.Module):
         loss = 0.0 
         for i in range(batchsize):
             for j in range(batchsize):
-
+                
         return loss
 
 

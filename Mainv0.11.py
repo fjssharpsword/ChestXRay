@@ -18,19 +18,19 @@ from torch.optim import lr_scheduler
 import torch.optim as optim
 import torchvision
 from skimage.measure import label
- 
-#self-defined
+
 from ChestXRay8 import get_train_dataloader, get_validation_dataloader, get_test_dataloader
-from Utils import compute_AUCs, compute_ROCCurve
+from Utils import compute_AUCs
 from Models.DenseNet import DenseNet121
 from Models.ResNet import resnet50
 from Models.SEDenseNet import se_densenet121
 from Models.ATNet import ATNet
+from Models.AGResNet import ResidualNet 
 #from Models.TripletRankingLoss import TripletRankingLoss
 
 #command parameters
 parser = argparse.ArgumentParser(description='For ChestXRay')
-parser.add_argument('--model', type=str, default='ATNet', help='ResNet, DenseNet, SEDenset, ATNet')
+parser.add_argument('--model', type=str, default='DenseNet', help='ResNet, DenseNet, SEDenset, AGNet')
 args = parser.parse_args()
 
 #config
@@ -176,17 +176,9 @@ def Test(CKPT_PATH = ''):
         print('The AUROC of {} is {:.4f}'.format(CLASS_NAMES[i], AUROCs[i]))
     print('The average AUROC is {:.4f}'.format(AUROC_avg))
 
-    #Evaluating the threshold of prediction
-    #fpr = 1-Specificity, tpr=Sensitivity
-    np.set_printoptions(suppress=True) #to float
-    fprs, tprs, thresholds = compute_ROCCurve(gt, pred, CLASS_NAMES)
-    print(fprs)
-    print(tprs)
-    print(thresholds)
-
 def main():
-    #CKPT_PATH = Train() #for training
-    CKPT_PATH ='./Pre-trained/'+ args.model +'/best_model.pkl' #for debug
+    CKPT_PATH = Train() #for training
+    #CKPT_PATH ='./Pre-trained/'+ args.model +'/best_model.pkl' #for debug
     Test(CKPT_PATH) #for test
 
 if __name__ == '__main__':
