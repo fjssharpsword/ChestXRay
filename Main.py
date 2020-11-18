@@ -38,7 +38,7 @@ os.environ['CUDA_VISIBLE_DEVICES'] = "0,1,2,3,4,5,6,7"
 CLASS_NAMES = ['Atelectasis', 'Cardiomegaly', 'Effusion', 'Infiltration', 'Mass', 'Nodule', 'Pneumonia', 
                'Pneumothorax', 'Consolidation', 'Edema', 'Emphysema', 'Fibrosis', 'Pleural_Thickening', 'Hernia']
 N_CLASSES = len(CLASS_NAMES)
-MAX_EPOCHS = 20 
+MAX_EPOCHS = 5#20 
 BATCH_SIZE = 256 + 256 #128
 
 def Train():
@@ -79,6 +79,23 @@ def Train():
         train_loss = []
         with torch.autograd.enable_grad():
             for batch_idx, (image, label) in enumerate(dataloader_train):
+                var_image = torch.autograd.Variable(image).cuda()
+                var_label = torch.autograd.Variable(label).cuda()
+                optimizer.zero_grad()
+
+                var_output = model(var_image)#forward
+                loss_tensor = criterion(var_output, var_label)#backward
+                loss_tensor.backward()
+                optimizer.step()##update parameters
+                
+                sys.stdout.write('\r Epoch: {} / Step: {} : train loss = {}'.format(epoch+1, batch_idx+1, float('%0.6f'%loss_tensor.item())))
+                sys.stdout.flush()
+                train_loss.append(loss_tensor.item())
+        print("\r Eopch: %5d train loss = %.6f" % (epoch + 1, np.mean(train_loss))) 
+
+        train_loss = []
+        with torch.autograd.enable_grad():
+            for batch_idx, (image, label) in enumerate(dataloader_val):
                 var_image = torch.autograd.Variable(image).cuda()
                 var_label = torch.autograd.Variable(label).cuda()
                 optimizer.zero_grad()
