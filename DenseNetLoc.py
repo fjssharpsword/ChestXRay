@@ -90,7 +90,8 @@ def WeaklyLocation(CKPT_PATH):
             probs, idx = h_x.sort(0, True) #probabilities of classe
             cls_prob_line = '{:.4f} -> {}'.format(probs[0], classes[idx[0].item()])
             cam_img = returnCAM(var_feature.cpu().data.numpy(), weight_softmax, idx[0].item())
-            IoU_Score,  Dice_Score= genPredBoxes(cam_img, gtbox[0]) # genPredBoxes(var_feature, gtbox[0]) for GramCAM
+            IoU_Score,  Dice_Score= genPredBoxes(cam_img, gtbox[0]) 
+            # genPredBoxes(var_feature, gtbox[0]) for GramCAM
             IoUs.append(IoU_Score.item())
             Dices.append(Dice_Score.item())
             sys.stdout.write('\r Location process: = {}'.format(batch_idx+1))

@@ -1,5 +1,5 @@
 from sklearn.metrics import roc_auc_score
-from sklearn.metrics import roc_curve
+from sklearn.metrics import roc_curve, auc
 import re
 import sys
 import os
@@ -9,25 +9,21 @@ import numpy as np
 import matplotlib.pyplot as plt
 
 def compute_ROCCurve(gt, pred, class_names):
+    #fpr = 1-Specificity, tpr=Sensitivity
+    np.set_printoptions(suppress=True) #to float
     n_classes = len(class_names)
-    fprs, tprs, thresholds = [], [], []
+    thresholds = []
     gt_np = gt.cpu().numpy()
     pred_np = pred.cpu().numpy()
     color_name =['r','b','k','y','c','g','m','tan','gold','gray','coral','peru','lime','plum']
     for i in range(n_classes):
         fpr, tpr, threshold = roc_curve(gt_np[:, i], pred_np[:, i])
-        auc_score = roc_auc_score(gt_np[:, i], pred_np[:, i])#macro
+        auc_score = auc(fpr, tpr)
+        plt.plot(fpr, tpr, c = color_name[i], ls = '--', label = u'{}-AUROC{:.4f}'.format(class_names[i],auc_score))
         #select the prediction threshold
-        idx = np.where(tpr>auc_score)[0] 
-        fpr = fpr[idx]
-        tpr = tpr[idx]
-        threshold = threshold[idx]
-        idx = np.where(fpr<0.2)[0] 
-        fprs.append(fpr[idx])
-        tprs.append(tpr[idx])
+        idx = np.where(tpr>auc_score)[0][0]
         thresholds.append(threshold[idx])
-        
-        plt.plot(fpr, tpr, c = color_name[i], ls = '--', label = u'{}{:.4f}'.format(class_names[i],auc_score))
+
     #plot and save
     plt.plot((0, 1), (0, 1), c = '#808080', lw = 1, ls = '--', alpha = 0.7)
     plt.xlim((-0.01, 1.02))
@@ -41,7 +37,7 @@ def compute_ROCCurve(gt, pred, class_names):
     plt.title('ChestXRay8')
     plt.savefig('./Imgs/ROCCurve.jpg')
 
-    return fprs, tpr, thresholds
+    return thresholds
 
 def compute_AUCs(gt, pred, N_CLASSES=14):
     AUROCs = []

@@ -177,11 +177,7 @@ def Test(CKPT_PATH = ''):
     print('The average AUROC is {:.4f}'.format(AUROC_avg))
 
     #Evaluating the threshold of prediction
-    #fpr = 1-Specificity, tpr=Sensitivity
-    np.set_printoptions(suppress=True) #to float
-    fprs, tprs, thresholds = compute_ROCCurve(gt, pred, CLASS_NAMES)
-    print(fprs)
-    print(tprs)
+    thresholds = compute_ROCCurve(gt, pred, CLASS_NAMES)
     print(thresholds)
 
 def main():
