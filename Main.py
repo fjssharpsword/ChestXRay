@@ -177,12 +177,12 @@ def Test(CKPT_PATH = ''):
     print('The average AUROC is {:.4f}'.format(AUROC_avg))
 
     #Evaluating the threshold of prediction
-    thresholds = compute_ROCCurve(gt, pred, CLASS_NAMES)
-    print(thresholds)
+    #thresholds = compute_ROCCurve(gt, pred, CLASS_NAMES)
+    #print(thresholds)
 
 def main():
-    #CKPT_PATH = Train() #for training
-    CKPT_PATH ='./Pre-trained/'+ args.model +'/best_model.pkl' #for debug
+    CKPT_PATH = Train() #for training
+    #CKPT_PATH ='./Pre-trained/'+ args.model +'/best_model.pkl' #for debug
     Test(CKPT_PATH) #for test
 
 if __name__ == '__main__':

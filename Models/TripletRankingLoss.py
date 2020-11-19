@@ -18,7 +18,6 @@ class TripletRankingLoss(nn.Module):
                 
         return loss
 
-
 #https://github.com/marvis/pytorch-yolo2/blob/master/FocalLoss.py
 #https://github.com/clcarwin/focal_loss_pytorch/blob/master/focalloss.py
 class FocalLoss(nn.Module):
