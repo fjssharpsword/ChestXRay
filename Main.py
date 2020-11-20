@@ -20,17 +20,14 @@ import torchvision
 from skimage.measure import label
  
 #self-defined
-from ChestXRay8 import get_train_dataloader, get_validation_dataloader, get_test_dataloader
+from ChestXRay8 import get_train_dataloader, get_validation_dataloader, get_test_dataloader, get_train_dataloader_triplet
 from Utils import compute_AUCs, compute_ROCCurve
-from Models.DenseNet import DenseNet121
-from Models.ResNet import resnet50
-from Models.SEDenseNet import se_densenet121
 from Models.ATNet import ATNet
-#from Models.TripletRankingLoss import TripletRankingLoss
+from Models.TripletRankingLoss import TripletRankingLoss
 
 #command parameters
 parser = argparse.ArgumentParser(description='For ChestXRay')
-parser.add_argument('--model', type=str, default='ATNet', help='ResNet, DenseNet, SEDenset, ATNet')
+parser.add_argument('--model', type=str, default='ATNet', help='ATNet')
 args = parser.parse_args()
 
 #config
@@ -38,23 +35,19 @@ os.environ['CUDA_VISIBLE_DEVICES'] = "0,1,2,3,4,5,6,7"
 CLASS_NAMES = ['Atelectasis', 'Cardiomegaly', 'Effusion', 'Infiltration', 'Mass', 'Nodule', 'Pneumonia', 
                'Pneumothorax', 'Consolidation', 'Edema', 'Emphysema', 'Fibrosis', 'Pleural_Thickening', 'Hernia']
 N_CLASSES = len(CLASS_NAMES)
-MAX_EPOCHS = 20 
+MAX_EPOCHS = 2#20 
 BATCH_SIZE = 256 + 256 #128
 
 def Train():
     print('********************load data********************')
     dataloader_train = get_train_dataloader(batch_size=BATCH_SIZE, shuffle=True, num_workers=8)
     dataloader_val = get_validation_dataloader(batch_size=BATCH_SIZE, shuffle=False, num_workers=8)
+
+    dataloader_train_triplet = get_train_dataloader_triplet(batch_size=128, shuffle=True, num_workers=8)
     print('********************load data succeed!********************')
 
     print('********************load model********************')
-    if args.model == 'DenseNet':
-        model = DenseNet121(num_classes=N_CLASSES, is_pre_trained=True).cuda()#initialize model
-    elif args.model == 'ResNet':
-        model = resnet50(t_num_classes=N_CLASSES, pretrained=True).cuda()#initialize model
-    elif args.model == 'SEDenseNet':
-        model = se_densenet121(t_num_classes=N_CLASSES, pretrained=True).cuda()#initialize model
-    elif args.model == 'ATNet':
+    if args.model == 'ATNet':
         model = ATNet(num_classes=N_CLASSES, is_pre_trained=True).cuda()#initialize model
     else: 
         print('No required model')
@@ -62,8 +55,8 @@ def Train():
 
     model = nn.DataParallel(model).cuda()  # make model available multi GPU cores training
     torch.backends.cudnn.benchmark = True  # improve train speed slightly
-    criterion = nn.BCELoss()
-    #triloss = TripletRankingLoss() 
+    bce_criterion = nn.BCELoss()
+    tl_criterion = TripletRankingLoss()
     optimizer = optim.Adam(model.parameters(), lr=1e-3, betas=(0.9, 0.999), eps=1e-08, weight_decay=1e-5)
     lr_scheduler_model = lr_scheduler.StepLR(optimizer , step_size = 10, gamma = 1)
     print('********************load model succeed!********************')
@@ -76,22 +69,43 @@ def Train():
         print('Epoch {}/{}'.format(epoch+1 , MAX_EPOCHS))
         print('-' * 10)
         model.train()  #set model to training mode
-        train_loss = []
+        """
+        train_loss_bce = []
         with torch.autograd.enable_grad():
             for batch_idx, (image, label) in enumerate(dataloader_train):
                 var_image = torch.autograd.Variable(image).cuda()
                 var_label = torch.autograd.Variable(label).cuda()
                 optimizer.zero_grad()
-
                 var_output = model(var_image)#forward
-                loss_tensor = criterion(var_output, var_label)#backward
-                loss_tensor.backward()
+                loss_bce = bce_criterion(var_output, var_label)#backward
+                loss_bce.backward()
                 optimizer.step()##update parameters
                 
-                sys.stdout.write('\r Epoch: {} / Step: {} : train loss = {}'.format(epoch+1, batch_idx+1, float('%0.6f'%loss_tensor.item())))
+                sys.stdout.write('\r Epoch: {} / Step: {} : train BCE loss = {} '.format(epoch+1, batch_idx+1, float('%0.6f'%loss_bce.item())))
                 sys.stdout.flush()
-                train_loss.append(loss_tensor.item())
-        print("\r Eopch: %5d train loss = %.6f" % (epoch + 1, np.mean(train_loss))) 
+                train_loss_bce.append(loss_bce.item())
+        print("\r Eopch: %5d train BCE loss = %.6f" % (epoch + 1, np.mean(train_loss_bce))) 
+        """
+        #Triplet ranking loss for regularizer
+        train_loss_tr = []
+        with torch.autograd.enable_grad():
+            for batch_idx, (image_a, image_p, image_n) in enumerate(dataloader_train_triplet):
+                var_image_a = torch.autograd.Variable(image_a).cuda()
+                var_image_p = torch.autograd.Variable(image_p).cuda()
+                var_image_n = torch.autograd.Variable(image_n).cuda()
+
+                optimizer.zero_grad()
+                var_output_a = model(var_image_a)#anchor
+                var_output_p = model(var_image_p)#positive
+                var_output_n = model(var_image_n)#negative
+
+                loss_tr = tl_criterion(var_output_a, var_output_p, var_output_n)
+                loss_tr.backward()
+                optimizer.step()##update parameters
+                sys.stdout.write('\r Epoch: {} / Step: {} : train TR loss = {} '.format(epoch+1, batch_idx+1, float('%0.6f'%loss_tr.item())))
+                sys.stdout.flush()
+                train_loss_tr.append(loss_tr.item())
+        print("\r Eopch: %5d train TR loss = %.6f" % (epoch + 1, np.mean(train_loss_tr))) 
 
         model.eval()#turn to test mode
         val_loss = []
@@ -105,13 +119,13 @@ def Train():
                 var_label = torch.autograd.Variable(label).cuda()
                 var_output = model(var_image)#forward
                 pred = torch.cat((pred, var_output.data), 0)
-                loss_tensor = criterion(var_output, var_label)#backward
-                sys.stdout.write('\r Epoch: {} / Step: {} : validation loss = {}'.format(epoch+1, batch_idx+1, float('%0.6f'%loss_tensor.item())))
+                loss_bce = bce_criterion(var_output, var_label)
+                sys.stdout.write('\r Epoch: {} / Step: {} : validation BCE loss ={}'.format(epoch+1, batch_idx+1, float('%0.6f'%loss_bce.item())))
                 sys.stdout.flush()
-                val_loss.append(loss_tensor.item())
+                val_loss.append(loss_bce.item())
         AUROCs = compute_AUCs(gt, pred, N_CLASSES)
         AUROC_avg = np.array(AUROCs).mean()
-        print("\r Eopch: %5d validation loss = %.6f, Validataion AUROC = %.4f" % (epoch + 1, np.mean(val_loss), AUROC_avg)) 
+        print("\r Eopch: %5d validation BCE loss = %.6f, Validataion AUROC = %.4f" % (epoch + 1, np.mean(val_loss), AUROC_avg)) 
 
         if AUROC_best < AUROC_avg:
             AUROC_best = AUROC_avg
@@ -132,13 +146,7 @@ def Test(CKPT_PATH = ''):
 
     print('********************load model********************')
     # initialize and load the model
-    if args.model == 'DenseNet':
-        model = DenseNet121(num_classes=N_CLASSES, is_pre_trained=True).cuda()#initialize model
-    elif args.model == 'ResNet':
-        model = resnet50(t_num_classes=N_CLASSES, pretrained=True).cuda()#initialize model
-    elif args.model == 'SEDenseNet':
-        model = se_densenet121(t_num_classes=N_CLASSES, pretrained=True).cuda()#initialize model
-    elif args.model == 'ATNet':
+    if args.model == 'ATNet':
         model = ATNet(num_classes=N_CLASSES, is_pre_trained=True).cuda()#initialize model 
     else: 
         print('No required model')

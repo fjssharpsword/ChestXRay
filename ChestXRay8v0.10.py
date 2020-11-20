@@ -6,8 +6,7 @@ from PIL import Image
 import os
 import pandas as pd
 import numpy as np
-import time
-import random
+
 """
 Dataset: Chest X-Ray8
 https://www.kaggle.com/nih-chest-xrays/data
@@ -16,7 +15,6 @@ https://nihcc.app.box.com/v/ChestXray-NIHCC/folder/36938765345
 2）Label:['Atelectasis', 'Cardiomegaly', 'Effusion','Infiltration', 'Mass', 'Nodule', 'Pneumonia', \
         'Pneumothorax', 'Consolidation', 'Edema', 'Emphysema', 'Fibrosis', 'Pleural_Thickening', 'Hernia']
 """
-
 class DatasetGenerator(Dataset):
     def __init__(self, path_to_img_dir, path_to_dataset_file, transform=None):
         """
@@ -87,6 +85,7 @@ def get_train_dataloader(batch_size, shuffle, num_workers):
                                    shuffle=shuffle, num_workers=num_workers, pin_memory=True)
     return data_loader_train
 
+
 def get_validation_dataloader(batch_size, shuffle, num_workers):
     dataset_validation = DatasetGenerator(path_to_img_dir=PATH_TO_IMAGES_DIR,
                                           path_to_dataset_file=PATH_TO_VAL_FILE, transform=transform_seq)
@@ -102,7 +101,6 @@ def get_test_dataloader(batch_size, shuffle, num_workers):
                                    shuffle=shuffle, num_workers=num_workers, pin_memory=True)
     return data_loader_test
 
-#generate box dataset
 PATH_TO_BOX_FILE = './Dataset/fjs_BBox.csv'
 CLASS_NAMES = ['Atelectasis', 'Cardiomegaly', 'Effusion', 'Infiltration', 'Mass', 'Nodule', 'Pneumonia', 
                'Pneumothorax', 'Consolidation', 'Edema', 'Emphysema', 'Fibrosis', 'Pleural_Thickening', 'Hernia']
@@ -165,75 +163,3 @@ def get_bbox_dataloader(batch_size, shuffle, num_workers):
     data_loader_bbox = DataLoader(dataset=dataset_bbox, batch_size=batch_size,
                                    shuffle=shuffle, num_workers=num_workers, pin_memory=True)
     return data_loader_bbox
-
-#sampling triplet dataset
-class TripletDatasetGenerator(Dataset):
-    def __init__(self, path_to_img_dir, path_to_dataset_file, transform=None):
-        """
-        Args:
-            data_dir: path to image directory.
-            image_list_file: path to the file containing images
-                with corresponding labels.
-            transform: optional transform to be applied on a sample.
-        """
-        image_names = []
-        labels = []
-        with open(path_to_dataset_file, "r") as f:
-            for line in f:
-                items = line.split()
-                image_name= items[0].split('/')[1]
-                label = items[1:]
-                label = [int(i) for i in label]
-                image_name = os.path.join(path_to_img_dir, image_name)
-                image_names.append(image_name)
-                labels.append(label)
-        #select anchor, positive, negative
-        samples = self._selTripletSamples(image_names, labels)
-        self.samples = samples
-        self.transform = transform
-
-    def _selTripletSamples(self, image_names, labels):
-        stime = time.time()
-        labels = np.array(labels)
-        idxs_a = np.where(np.sum(labels, 1)>0)[0] #disease sample as anchor
-        idxs_n = np.where(np.sum(labels, 1)==0)[0] #normal sample as negative
-        samples = [] #anchor, positive, negative
-        for id_a in idxs_a[0:1024]:
-            #negative
-            id_n = random.sample(list(idxs_n), 1)[0]
-            #positive
-            cols = np.where(labels[id_a]==1)[0]
-            rows = np.where(labels[:, cols]==1)[0]
-            id_p = random.sample(list(rows), 1)[0]
-            samples.append([image_names[id_a], image_names[id_p], image_names[id_n]])
-        print("Triplet Samples: {}".format(len(samples))) 
-        print("Triplet Sampling: {} seconds".format(time.time()-stime))                 
-        return samples
-
-    def __getitem__(self, index):
-        """
-        Args:
-            index: the index of item
-        Returns:
-            image and its labels
-        """
-        sample = self.samples[index]
-        image_a = Image.open(sample[0]).convert('RGB')
-        image_p = Image.open(sample[1]).convert('RGB')
-        image_n = Image.open(sample[2]).convert('RGB')
-        if self.transform is not None:
-            image_a = self.transform(image_a)
-            image_p = self.transform(image_p)
-            image_n = self.transform(image_n)
-            
-        return image_a, image_p, image_n
-
-    def __len__(self):
-        return len(self.samples)
-
-def get_train_dataloader_triplet(batch_size, shuffle, num_workers):
-    dataset_train_triplet = TripletDatasetGenerator(path_to_img_dir=PATH_TO_IMAGES_DIR,
-                                     path_to_dataset_file=PATH_TO_TRAIN_FILE, transform=transform_seq)
-    data_loader_train_triplet = DataLoader(dataset=dataset_train_triplet, batch_size=batch_size,
-                                   shuffle=shuffle, num_workers=num_workers, pin_memory=True)
-    return data_loader_train_triplet
