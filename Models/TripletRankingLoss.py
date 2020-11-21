@@ -10,7 +10,69 @@ class TripletRankingLoss(nn.Module):
     def __init__(self, m=0.5):
         super(TripletRankingLoss, self).__init__()
         self.m = m 
-    
+    """  
+    def _selTripletSamples(self, gt):
+        #stime = time.time()
+        idxs_a = torch.where(torch.sum(gt, 1)>0)[0] #disease sample as anchor
+        idxs_n = torch.where(torch.sum(gt, 1)==0)[0] #normal sample as negative
+        samples = [] #anchor, positive, negative
+        for id_a in idxs_a:
+            #negative
+            id_n = random.sample(list(idxs_n), 1)[0]
+            #positive
+            cols = torch.where(gt[id_a]==1)[0]
+            rows = torch.where(gt[:, cols]==1)[0]
+            id_p = random.sample(list(rows), 1)[0]
+            samples.append([id_a, id_p, id_n])
+        #print("Triplet Sampling: {} seconds".format(time.time()-stime))                 
+        return samples
+    """           
+
+    def _selTripletSamples(self, gt):
+        stime = time.time()
+        idxs_a = torch.where(torch.sum(gt, 1)>0)[0] #disease sample as anchor
+        idxs_n = torch.where(torch.sum(gt, 1)==0)[0] #normal sample as negative
+        samples = [] #anchor, positive, negative
+        for id_a in idxs_a:
+            #positive
+            cols = torch.where(gt[id_a]==1)[0]
+            rows = torch.where(gt[:, cols]==1)[0]
+            id_p = random.sample(list(rows), 1)[0]
+            #negative
+            #id_n = random.sample(list(idxs_n), 1)[0]
+            idxs_a_cpu = idxs_a.cpu()
+            idxs_n_cpu = idxs_n.cpu()
+            rows = np.setdiff1d(idxs_a_cpu, rows.cpu()) #get other disease sample
+            rows = np.union1d(rows, idxs_n_cpu) #not intersect1d
+            id_n = random.sample(list(rows), 1)[0]
+ 
+            samples.append([id_a, id_p, id_n.cuda()])
+        for id_a in idxs_n:
+            #positive
+            id_p = random.sample(list(idxs_n), 1)[0]
+            #nagative
+            id_n = random.sample(list(idxs_a), 1)[0]
+
+            samples.append([id_a, id_p, id_n])
+        print("Triplet Sampling: {} seconds".format(time.time()-stime))   
+        return samples
+
+    def forward(self, pred, gt):
+        #gt: batchsize*num_classes
+        #fea: batchsize*length of vector
+        samples = self._selTripletSamples(gt)  #turn to similarity matrix
+        cos = nn.CosineSimilarity(dim=0, eps=1e-6)
+        losses = []
+        for spl in samples:
+            var_output_a = pred[spl[0]]
+            var_output_p = pred[spl[1]]
+            var_output_n = pred[spl[2]]
+            cos_v = cos(var_output_a, var_output_p) - cos(var_output_a, var_output_n) + self.m
+            loss = torch.where(cos_v<0, torch.zeros_like(cos_v), cos_v)#max(cos_v, 0)
+            losses.append(loss)
+        return torch.mean(torch.tensor(losses))
+
+    """
     def forward(self, var_output_a, var_output_p, var_output_n):
         #input: batchsize*num_classes
         #output: loss
@@ -19,7 +81,7 @@ class TripletRankingLoss(nn.Module):
         loss = torch.where(cos_v<0, torch.zeros_like(cos_v), cos_v)
 
         return torch.mean(loss)
-
+    """
     """
     def _selTripletSamples(self, gt):
         #stime = time.time()
@@ -60,51 +122,20 @@ class TripletRankingLoss(nn.Module):
                 losses.append(loss_pn)
         return torch.mean(torch.tensor(losses))
     """
-    """
-    def _selTripletSamples(self, gt):
-        stime = time.time()
-        idxs_a = torch.where(torch.sum(gt, 1)>0)[0] #disease sample as anchor
-        idxs_n = torch.where(torch.sum(gt, 1)==0)[0] #normal sample as negative
-        samples = [] #anchor, positive, negative
-        for id_a in idxs_a:
-            #negative
-            id_n = random.sample(list(idxs_n), 1)[0]
-            #positive
-            cols = torch.where(gt[id_a]==1)[0]
-            rows = torch.where(gt[:, cols]==1)[0]
-            id_p = random.sample(list(rows), 1)[0]
-            samples.append([id_a, id_p, id_n])
-        print("Triplet Sampling: {} seconds".format(time.time()-stime))                 
-        return samples
-                        
-    def forward(self, gt, pred):
-        #gt: batchsize*num_classes
-        #fea: batchsize*length of vector
-        samples = self._selTripletSamples(gt)  #turn to similarity matrix
-        cos = nn.CosineSimilarity(dim=0, eps=1e-6)
-        losses = []
-        for spl in samples:
-            var_output_a = pred[spl[0]]
-            var_output_p = pred[spl[1]]
-            var_output_n = pred[spl[2]]
-            cos_v = cos(var_output_a, var_output_p) - cos(var_output_a, var_output_n) + self.m
-            loss = torch.where(cos_v<0, torch.zeros_like(cos_v), cos_v)
-            losses.append(loss)
-        return torch.mean(torch.tensor(losses))
-    """
+    
 """
 #for debug   
 gt = torch.zeros(512, 14)
 pred = torch.rand(512, 14)
-for i in range(250):#generate 0,1 randomly
+for i in range(250):#generate 1 randomly
     row = random.randint(0,511)
     ones_n = random.randint(1,2)
     col = [random.randint(0,13) for _ in range(ones_n)]
-    gt[row, col] = 1
+    gt[i, col] = 1
 #a = torch.rand(512, 14)
 #p = torch.rand(512, 14)
 #n = torch.rand(512, 14)
 trl = TripletRankingLoss()
-loss = trl(gt,pred)
+loss = trl(pred,gt)
 print(loss)
 """

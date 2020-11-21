@@ -42,6 +42,7 @@ def Train():
     print('********************load data********************')
     dataloader_train = get_train_dataloader(batch_size=BATCH_SIZE, shuffle=True, num_workers=8)
     dataloader_val = get_validation_dataloader(batch_size=BATCH_SIZE, shuffle=False, num_workers=8)
+    #dataloader_train_triplet = get_train_dataloader_triplet(batch_size=128, shuffle=True, num_workers=8)
     print('********************load data succeed!********************')
 
     print('********************load model********************')
@@ -53,8 +54,8 @@ def Train():
 
     model = nn.DataParallel(model).cuda()  # make model available multi GPU cores training
     torch.backends.cudnn.benchmark = True  # improve train speed slightly
-    bce_criterion = nn.BCELoss() #define binary cross-entropy loss
-    tl_criterion = TripletRankingLoss(m=0.2) #define triplet ranking loss
+    bce_criterion = nn.BCELoss()
+    tl_criterion = TripletRankingLoss()
     optimizer = optim.Adam(model.parameters(), lr=1e-3, betas=(0.9, 0.999), eps=1e-08, weight_decay=1e-5)
     lr_scheduler_model = lr_scheduler.StepLR(optimizer , step_size = 10, gamma = 1)
     print('********************load model succeed!********************')
@@ -78,14 +79,36 @@ def Train():
                 loss_bce = bce_criterion(var_output, var_label)#backward
                 loss_tr = tl_criterion(var_output, var_label)
                 loss_tensor = loss_bce + loss_tr
-                loss_tensor.backward() #retain_graph=True (buffer) for multi-loss
+                loss_tensor.backward()
                 optimizer.step()##update parameters
                 
                 sys.stdout.write('\r Epoch: {} / Step: {} : train BCE loss = {} TR loss={}'.format(epoch+1, batch_idx+1, \
                                                              float('%0.6f'%loss_bce.item()), float('%0.6f'%loss_tr.item()) ))
                 sys.stdout.flush()
                 train_loss.append(loss_tensor.item())
-        print("\r Eopch: %5d train loss = %.6f" % (epoch + 1, np.mean(train_loss))) 
+        print("\r Eopch: %5d train BCE loss = %.6f" % (epoch + 1, np.mean(train_loss))) 
+        """
+        #Triplet ranking loss for regularizer
+        train_loss_tr = []
+        with torch.autograd.enable_grad():
+            for batch_idx, (image_a, image_p, image_n) in enumerate(dataloader_train_triplet):
+                var_image_a = torch.autograd.Variable(image_a).cuda()
+                var_image_p = torch.autograd.Variable(image_p).cuda()
+                var_image_n = torch.autograd.Variable(image_n).cuda()
+
+                optimizer.zero_grad()
+                var_output_a = model(var_image_a)#anchor
+                var_output_p = model(var_image_p)#positive
+                var_output_n = model(var_image_n)#negative
+                loss_tr = tl_criterion(var_output_a, var_output_p, var_output_n)
+                loss_tr.backward()
+                optimizer.step()##update parameters
+
+                sys.stdout.write('\r Epoch: {} / Step: {} : train TR loss = {} '.format(epoch+1, batch_idx+1, float('%0.6f'%loss_tr.item())))
+                sys.stdout.flush()
+                train_loss_tr.append(loss_tr.item())
+        print("\r Eopch: %5d train TR loss = %.6f" % (epoch + 1, np.mean(train_loss_tr))) 
+        """
 
         model.eval()#turn to test mode
         val_loss = []
@@ -108,7 +131,7 @@ def Train():
                 val_loss.append(loss_tensor.item())
         AUROCs = compute_AUCs(gt, pred, N_CLASSES)
         AUROC_avg = np.array(AUROCs).mean()
-        print("\r Eopch: %5d validation loss = %.6f, Validataion AUROC = %.4f" % (epoch + 1, np.mean(val_loss), AUROC_avg)) 
+        print("\r Eopch: %5d validation BCE loss = %.6f, Validataion AUROC = %.4f" % (epoch + 1, np.mean(val_loss), AUROC_avg)) 
 
         if AUROC_best < AUROC_avg:
             AUROC_best = AUROC_avg

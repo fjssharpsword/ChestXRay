@@ -206,7 +206,7 @@ class TripletDatasetGenerator(Dataset):
             rows = np.where(labels[:, cols]==1)[0]
             id_p = random.sample(list(rows), 1)[0]
             samples.append([image_names[id_a], image_names[id_p], image_names[id_n]])
-        print("Triplet Samples: {}".format(len(samples))) 
+        #print("Triplet Samples: {}".format(len(samples))) 
         print("Triplet Sampling: {} seconds".format(time.time()-stime))                 
         return samples
 
