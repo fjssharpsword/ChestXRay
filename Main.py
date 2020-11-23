@@ -54,7 +54,7 @@ def Train():
     model = nn.DataParallel(model).cuda()  # make model available multi GPU cores training
     torch.backends.cudnn.benchmark = True  # improve train speed slightly
     bce_criterion = nn.BCELoss() #define binary cross-entropy loss
-    tl_criterion = TripletRankingLoss(m=0.2) #define triplet ranking loss
+    tl_criterion = TripletRankingLoss() #define triplet ranking loss
     optimizer = optim.Adam(model.parameters(), lr=1e-3, betas=(0.9, 0.999), eps=1e-08, weight_decay=1e-5)
     lr_scheduler_model = lr_scheduler.StepLR(optimizer , step_size = 10, gamma = 1)
     print('********************load model succeed!********************')
@@ -75,12 +75,14 @@ def Train():
 
                 optimizer.zero_grad()
                 var_output = model(var_image)#forward
-                loss_bce = bce_criterion(var_output, var_label)#backward
-                loss_tr = tl_criterion(var_output, var_label)
-                loss_tensor = loss_bce + loss_tr
-                loss_tensor.backward() #retain_graph=True (buffer) for multi-loss
-                optimizer.step()##update parameters
-                
+                loss_tr = tl_criterion(var_output, var_label)       
+                #loss_tr.backward(retain_graph=True)#buffer
+                loss_bce = bce_criterion(var_output, var_label)         
+                loss_tensor = loss_bce + loss_tr   
+                loss_tensor.backward() 
+                optimizer.step()##update parameters    
+                #print([x.grad for x in optimizer.param_groups[0]['params']])
+        
                 sys.stdout.write('\r Epoch: {} / Step: {} : train BCE loss = {} TR loss={}'.format(epoch+1, batch_idx+1, \
                                                              float('%0.6f'%loss_bce.item()), float('%0.6f'%loss_tr.item()) ))
                 sys.stdout.flush()
@@ -99,8 +101,8 @@ def Train():
                 var_label = torch.autograd.Variable(label).cuda()
                 var_output = model(var_image)#forward
                 pred = torch.cat((pred, var_output.data), 0)
-                loss_bce = bce_criterion(var_output, var_label)
                 loss_tr = tl_criterion(var_output, var_label)
+                loss_bce = bce_criterion(var_output, var_label)#backward
                 loss_tensor = loss_bce + loss_tr
                 sys.stdout.write('\r Epoch: {} / Step: {} : validation BCE loss ={} TR loss={}'.format(epoch+1, batch_idx+1, \
                                               float('%0.6f'%loss_bce.item()), float('%0.6f'%loss_tr.item()) ))
