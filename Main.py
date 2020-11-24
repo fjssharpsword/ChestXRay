@@ -35,7 +35,7 @@ os.environ['CUDA_VISIBLE_DEVICES'] = "0,1,2,3,4,5,6,7"
 CLASS_NAMES = ['Atelectasis', 'Cardiomegaly', 'Effusion', 'Infiltration', 'Mass', 'Nodule', 'Pneumonia', 
                'Pneumothorax', 'Consolidation', 'Edema', 'Emphysema', 'Fibrosis', 'Pleural_Thickening', 'Hernia']
 N_CLASSES = len(CLASS_NAMES)
-MAX_EPOCHS = 20 
+MAX_EPOCHS = 20
 BATCH_SIZE = 256 + 256 #128
 
 def Train():
@@ -45,8 +45,9 @@ def Train():
     print('********************load data succeed!********************')
 
     print('********************load model********************')
+    # initialize and load the model
     if args.model == 'ATNet':
-        model = ATNet(num_classes=N_CLASSES, is_pre_trained=True).cuda()#initialize model
+        model = ATNet(num_classes=N_CLASSES, is_pre_trained=True).cuda()#initialize model 
     else: 
         print('No required model')
         return #over
@@ -75,7 +76,7 @@ def Train():
 
                 optimizer.zero_grad()
                 var_output = model(var_image)#forward
-                loss_tr = tl_criterion(var_output, var_label)       
+                loss_tr = torch.tensor(0.0)  #tl_criterion(var_output, var_label) #torch.tensor(0.0)       
                 #loss_tr.backward(retain_graph=True)#buffer
                 loss_bce = bce_criterion(var_output, var_label)         
                 loss_tensor = loss_bce + loss_tr   

@@ -9,7 +9,7 @@ from torch import Tensor
 from typing import Tuple
 
 class TripletRankingLoss(nn.Module):
-    
+    """
     #sampling all pospair and negpair
     def __init__(self, scale=1, margin=0.25, similarity='cos', **kwargs):
         super(TripletRankingLoss, self).__init__()
@@ -35,6 +35,7 @@ class TripletRankingLoss(nn.Module):
 
         pos_pair_ = sim_mat[pos_mask == 1]
         neg_pair_ = sim_mat[neg_mask == 1]
+        #neg_pair_ = sim_mat[neg_mask == 1][0:len(pos_pair_)]
 
         alpha_p = torch.relu(-pos_pair_ + 1 + self.margin)
         alpha_n = torch.relu(neg_pair_ + self.margin)
@@ -44,8 +45,8 @@ class TripletRankingLoss(nn.Module):
         loss_n = torch.sum(torch.exp(self.scale * alpha_n * (neg_pair_ - margin_n)))
         loss = torch.log(1 + loss_p * loss_n)
         return loss
-
     """
+    
     def __init__(self, m=0.1):
         super(TripletRankingLoss, self).__init__()
         self.m = m 
@@ -92,7 +93,6 @@ class TripletRankingLoss(nn.Module):
         loss = torch.where(cos_v<0, torch.zeros_like(cos_v), cos_v)#max(cos_v, 0)
         loss = torch.mean(loss).requires_grad_()
         return loss
-    """
     
 if __name__ == "__main__":
     #for debug   

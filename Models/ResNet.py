@@ -112,6 +112,8 @@ class ResNet(nn.Module):
         self.avgpool = nn.AdaptiveAvgPool2d(1)
         self.fc = nn.Linear(512 * block.expansion, num_classes)
 
+        self.msa = MultiScaleAttention()
+
         for m in self.modules():
             if isinstance(m, nn.Conv2d):
                 n = m.kernel_size[0] * m.kernel_size[1] * m.out_channels
@@ -153,7 +155,6 @@ class ResNet(nn.Module):
         x = self.fc(x)
 
         return torch.sigmoid(x) 
-
 
 def resnet18(pretrained=False, **kwargs):
     """Constructs a ResNet-18 model.
