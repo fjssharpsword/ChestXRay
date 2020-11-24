@@ -20,7 +20,7 @@ import torchvision
 from skimage.measure import label
  
 #self-defined
-from ChestXRay8 import get_train_dataloader, get_validation_dataloader, get_test_dataloader, get_train_dataloader_triplet
+from ChestXRay8 import get_train_dataloader, get_validation_dataloader, get_test_dataloader, get_train_dataloader_disease
 from Utils import compute_AUCs, compute_ROCCurve
 from Models.ATNet import ATNet
 from Models.TripletRankingLoss import TripletRankingLoss
@@ -35,13 +35,15 @@ os.environ['CUDA_VISIBLE_DEVICES'] = "0,1,2,3,4,5,6,7"
 CLASS_NAMES = ['Atelectasis', 'Cardiomegaly', 'Effusion', 'Infiltration', 'Mass', 'Nodule', 'Pneumonia', 
                'Pneumothorax', 'Consolidation', 'Edema', 'Emphysema', 'Fibrosis', 'Pleural_Thickening', 'Hernia']
 N_CLASSES = len(CLASS_NAMES)
-MAX_EPOCHS = 20
+MAX_EPOCHS = 50
 BATCH_SIZE = 256 + 256 #128
 
 def Train():
     print('********************load data********************')
     dataloader_train = get_train_dataloader(batch_size=BATCH_SIZE, shuffle=True, num_workers=8)
     dataloader_val = get_validation_dataloader(batch_size=BATCH_SIZE, shuffle=False, num_workers=8)
+
+    dataloader_train_disease = get_train_dataloader_disease(batch_size=BATCH_SIZE, shuffle=True, num_workers=8)
     print('********************load data succeed!********************')
 
     print('********************load model********************')
@@ -75,8 +77,8 @@ def Train():
                 var_label = torch.autograd.Variable(label).cuda()
 
                 optimizer.zero_grad()
-                var_output = model(var_image)#forward
-                loss_tr = torch.tensor(0.0)  #tl_criterion(var_output, var_label) #torch.tensor(0.0)       
+                var_feat, var_output = model(var_image)#forward
+                loss_tr = tl_criterion(var_feat, var_label) #torch.tensor(0.0)       
                 #loss_tr.backward(retain_graph=True)#buffer
                 loss_bce = bce_criterion(var_output, var_label)         
                 loss_tensor = loss_bce + loss_tr   
@@ -89,6 +91,31 @@ def Train():
                 sys.stdout.flush()
                 train_loss.append(loss_tensor.item())
         print("\r Eopch: %5d train loss = %.6f" % (epoch + 1, np.mean(train_loss))) 
+        
+        #-----------------------------------------------------------------------------#
+        #for diseaes samples
+        train_loss = []
+        with torch.autograd.enable_grad():
+            for batch_idx, (image, label) in enumerate(dataloader_train_disease):
+                var_image = torch.autograd.Variable(image).cuda()
+                var_label = torch.autograd.Variable(label).cuda()
+
+                optimizer.zero_grad()
+                var_feat, var_output = model(var_image)#forward
+                loss_tr = tl_criterion(var_feat, var_label) #torch.tensor(0.0)       
+                #loss_tr.backward(retain_graph=True)#buffer
+                loss_bce = bce_criterion(var_output, var_label)         
+                loss_tensor = loss_bce + loss_tr   
+                loss_tensor.backward() 
+                optimizer.step()##update parameters    
+                #print([x.grad for x in optimizer.param_groups[0]['params']])
+        
+                sys.stdout.write('\r Epoch: {} / Step: {} : train BCE loss = {} TR loss={}'.format(epoch+1, batch_idx+1, \
+                                                             float('%0.6f'%loss_bce.item()), float('%0.6f'%loss_tr.item()) ))
+                sys.stdout.flush()
+                train_loss.append(loss_tensor.item())
+        print("\r Eopch: %5d train loss = %.6f" % (epoch + 1, np.mean(train_loss)))
+        #-----------------------------------------------------------------------------#
 
         model.eval()#turn to test mode
         val_loss = []
@@ -100,9 +127,10 @@ def Train():
                 gt = torch.cat((gt, label), 0)
                 var_image = torch.autograd.Variable(image).cuda()
                 var_label = torch.autograd.Variable(label).cuda()
-                var_output = model(var_image)#forward
+                var_feat, var_output = model(var_image)#forward
                 pred = torch.cat((pred, var_output.data), 0)
-                loss_tr = tl_criterion(var_output, var_label)
+
+                loss_tr = tl_criterion(var_feat, var_label)
                 loss_bce = bce_criterion(var_output, var_label)#backward
                 loss_tensor = loss_bce + loss_tr
                 sys.stdout.write('\r Epoch: {} / Step: {} : validation BCE loss ={} TR loss={}'.format(epoch+1, batch_idx+1, \
@@ -159,7 +187,7 @@ def Test(CKPT_PATH = ''):
             gt = torch.cat((gt, label), 0)
             var_image = torch.autograd.Variable(image).cuda()
             var_label = torch.autograd.Variable(label).cuda()
-            var_output = model(var_image)#forward
+            _, var_output = model(var_image)#forward
             pred = torch.cat((pred, var_output.data), 0)
             sys.stdout.write('\r testing process: = {}'.format(batch_idx+1))
             sys.stdout.flush()

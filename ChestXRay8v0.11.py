@@ -167,7 +167,7 @@ def get_bbox_dataloader(batch_size, shuffle, num_workers):
     return data_loader_bbox
 
 #sampling triplet dataset
-class DiseaseDatasetGenerator(Dataset):
+class TripletDatasetGenerator(Dataset):
     def __init__(self, path_to_img_dir, path_to_dataset_file, transform=None):
         """
         Args:
@@ -184,14 +184,31 @@ class DiseaseDatasetGenerator(Dataset):
                 image_name= items[0].split('/')[1]
                 label = items[1:]
                 label = [int(i) for i in label]
-                if (np.array(label).sum()>0):
-                    image_name = os.path.join(path_to_img_dir, image_name)
-                    image_names.append(image_name)
-                    labels.append(label)
-
-        self.image_names = image_names
-        self.labels = labels
+                image_name = os.path.join(path_to_img_dir, image_name)
+                image_names.append(image_name)
+                labels.append(label)
+        #select anchor, positive, negative
+        samples = self._selTripletSamples(image_names, labels)
+        self.samples = samples
         self.transform = transform
+
+    def _selTripletSamples(self, image_names, labels):
+        stime = time.time()
+        labels = np.array(labels)
+        idxs_a = np.where(np.sum(labels, 1)>0)[0] #disease sample as anchor
+        idxs_n = np.where(np.sum(labels, 1)==0)[0] #normal sample as negative
+        samples = [] #anchor, positive, negative
+        for id_a in idxs_a[0:1024]:
+            #negative
+            id_n = random.sample(list(idxs_n), 1)[0]
+            #positive
+            cols = np.where(labels[id_a]==1)[0]
+            rows = np.where(labels[:, cols]==1)[0]
+            id_p = random.sample(list(rows), 1)[0]
+            samples.append([image_names[id_a], image_names[id_p], image_names[id_n]])
+        #print("Triplet Samples: {}".format(len(samples))) 
+        print("Triplet Sampling: {} seconds".format(time.time()-stime))                 
+        return samples
 
     def __getitem__(self, index):
         """
@@ -200,24 +217,23 @@ class DiseaseDatasetGenerator(Dataset):
         Returns:
             image and its labels
         """
-        image_name = self.image_names[index]
-        image = Image.open(image_name).convert('RGB')
-        label = self.labels[index]
+        sample = self.samples[index]
+        image_a = Image.open(sample[0]).convert('RGB')
+        image_p = Image.open(sample[1]).convert('RGB')
+        image_n = Image.open(sample[2]).convert('RGB')
         if self.transform is not None:
-            image = self.transform(image)
-        return image, torch.FloatTensor(label)
+            image_a = self.transform(image_a)
+            image_p = self.transform(image_p)
+            image_n = self.transform(image_n)
+            
+        return image_a, image_p, image_n
 
     def __len__(self):
-        return len(self.image_names)
+        return len(self.samples)
 
-def get_train_dataloader_disease(batch_size, shuffle, num_workers):
-    dataset_train_disease = DiseaseDatasetGenerator(path_to_img_dir=PATH_TO_IMAGES_DIR,
+def get_train_dataloader_triplet(batch_size, shuffle, num_workers):
+    dataset_train_triplet = TripletDatasetGenerator(path_to_img_dir=PATH_TO_IMAGES_DIR,
                                      path_to_dataset_file=PATH_TO_TRAIN_FILE, transform=transform_seq)
-    data_loader_train_disease = DataLoader(dataset=dataset_train_disease, batch_size=batch_size,
+    data_loader_train_triplet = DataLoader(dataset=dataset_train_triplet, batch_size=batch_size,
                                    shuffle=shuffle, num_workers=num_workers, pin_memory=True)
-    return data_loader_train_disease
-
-if __name__ == "__main__":
-    #for debug   
-    dataloader_train_disease = get_train_dataloader_disease(batch_size=512, shuffle=True, num_workers=0)
-    print(dataloader_train_disease.__len__)
+    return data_loader_train_triplet
