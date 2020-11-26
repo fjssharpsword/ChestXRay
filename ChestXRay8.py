@@ -178,6 +178,7 @@ class DiseaseDatasetGenerator(Dataset):
         """
         image_names = []
         labels = []
+        normal_nums = 15000 #sampling numbers of normal
         with open(path_to_dataset_file, "r") as f:
             for line in f:
                 items = line.split()
@@ -188,6 +189,12 @@ class DiseaseDatasetGenerator(Dataset):
                     image_name = os.path.join(path_to_img_dir, image_name)
                     image_names.append(image_name)
                     labels.append(label)
+                else: #np.array(label).sum()==0
+                    if normal_nums>0:
+                        image_name = os.path.join(path_to_img_dir, image_name)
+                        image_names.append(image_name)
+                        labels.append(label)
+                        normal_nums = normal_nums - 1
 
         self.image_names = image_names
         self.labels = labels
@@ -210,14 +217,14 @@ class DiseaseDatasetGenerator(Dataset):
     def __len__(self):
         return len(self.image_names)
 
-def get_train_dataloader_disease(batch_size, shuffle, num_workers):
-    dataset_train_disease = DiseaseDatasetGenerator(path_to_img_dir=PATH_TO_IMAGES_DIR,
+def get_train_dataloader_sample(batch_size, shuffle, num_workers):
+    dataset_train_sample = DiseaseDatasetGenerator(path_to_img_dir=PATH_TO_IMAGES_DIR,
                                      path_to_dataset_file=PATH_TO_TRAIN_FILE, transform=transform_seq)
-    data_loader_train_disease = DataLoader(dataset=dataset_train_disease, batch_size=batch_size,
+    data_loader_train_sample = DataLoader(dataset=dataset_train_sample, batch_size=batch_size,
                                    shuffle=shuffle, num_workers=num_workers, pin_memory=True)
-    return data_loader_train_disease
+    return data_loader_train_sample
 
 if __name__ == "__main__":
     #for debug   
-    dataloader_train_disease = get_train_dataloader_disease(batch_size=512, shuffle=True, num_workers=0)
-    print(dataloader_train_disease.__len__)
+    dataloader_train_sample = get_train_dataloader_sample(batch_size=512, shuffle=True, num_workers=0)
+    print(dataloader_train_sample.__len__)

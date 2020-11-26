@@ -43,7 +43,7 @@ class TripletRankingLoss(nn.Module):
                     #negative
                     id_n = random.sample(list(rows_neg), 1)[0]
                     negative = torch.cat((negative, pred[id_n,:].unsqueeze(0).cuda()), 0)
-
+            
             for id_a in idxs_n_cpu:
                 anchor = torch.cat((anchor, pred[id_a,:].unsqueeze(0).cuda()), 0)
                 #positive
