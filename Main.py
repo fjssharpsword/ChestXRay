@@ -68,7 +68,7 @@ def Train():
         model.train()  #set model to training mode
         train_loss = []
         with torch.autograd.enable_grad():
-            for batch_idx, (image, label) in enumerate(dataloader_train):
+            for batch_idx, (image, label) in enumerate(dataloader_train):  
                 var_image = torch.autograd.Variable(image).cuda()
                 var_label = torch.autograd.Variable(label).cuda()
                 optimizer.zero_grad()
