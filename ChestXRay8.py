@@ -224,7 +224,69 @@ def get_train_dataloader_sample(batch_size, shuffle, num_workers):
                                    shuffle=shuffle, num_workers=num_workers, pin_memory=True)
     return data_loader_train_sample
 
+#sampling triplet dataset
+class FullTrainDatasetGenerator(Dataset):
+    def __init__(self, path_to_img_dir, path_to_dataset_files, transform=None):
+        """
+        Args:
+            data_dir: path to image directory.
+            image_list_file: path to the file containing images
+                with corresponding labels.
+            transform: optional transform to be applied on a sample.
+        """
+        image_names = []
+        labels = []
+        for path_to_dataset_file in path_to_dataset_files:
+            with open(path_to_dataset_file, "r") as f:
+                for line in f:
+                    items = line.split()
+                    image_name= items[0].split('/')[1]
+                    label = items[1:]
+                    label = [int(i) for i in label]
+                    image_name = os.path.join(path_to_img_dir, image_name)
+                    image_names.append(image_name)
+                    labels.append(label)
+    
+        self.image_names = image_names
+        self.labels = labels
+        self.transform = transform
+
+    def __getitem__(self, index):
+        """
+        Args:
+            index: the index of item
+        Returns:
+            image and its labels
+        """
+        image_name = self.image_names[index]
+        image = Image.open(image_name).convert('RGB')
+        label = self.labels[index]
+        if self.transform is not None:
+            image = self.transform(image)
+        return image, torch.FloatTensor(label)
+
+    def __len__(self):
+        return len(self.image_names)
+
+def get_train_dataloader_full(batch_size, shuffle, num_workers, split_ratio=0.2):
+    dataset_train_full = FullTrainDatasetGenerator(path_to_img_dir=PATH_TO_IMAGES_DIR,
+                                     path_to_dataset_files=[PATH_TO_TRAIN_FILE, PATH_TO_VAL_FILE], transform=transform_seq)
+
+    #val_size = int(split_ratio * len(dataset_train_full))
+    #train_size = len(dataset_train_full) - val_size
+    #train_dataset, val_dataset = torch.utils.data.random_split(dataset_train_full, [train_size, val_size])
+
+    data_loader_train = DataLoader(dataset=dataset_train_full, batch_size=batch_size,
+                                   shuffle=shuffle, num_workers=num_workers, pin_memory=True)
+    #data_loader_val = DataLoader(dataset=val_dataset, batch_size=batch_size,
+                                   #shuffle=shuffle, num_workers=num_workers, pin_memory=True)
+    #return data_loader_train, data_loader_val
+    return data_loader_train
+
 if __name__ == "__main__":
     #for debug   
-    dataloader_train_sample = get_train_dataloader_sample(batch_size=512, shuffle=True, num_workers=0)
-    print(dataloader_train_sample.__len__)
+    data_loader_train, data_loader_val = get_train_dataloader_full(batch_size=512, shuffle=True, num_workers=0)
+    for batch_idx, (image, label) in enumerate(data_loader_train):
+        print(image.size())
+        print(label.size())
+        break
