@@ -17,6 +17,8 @@ import cv2
 import torchvision.transforms as transforms
 from torch.autograd import Variable
 from PIL import Image
+#defined by myself
+from Models.RMAC import RMAC
 
 #construct model
 class ATNet(nn.Module):
@@ -26,29 +28,36 @@ class ATNet(nn.Module):
         num_fc_kernels = self.dense_net_121.classifier.in_features #1024
         self.dense_net_121.classifier = nn.Sequential(nn.Linear(num_fc_kernels, num_classes), nn.Sigmoid())
         self.msa = MultiScaleAttention()
+        self.rmac = RMAC(level_n=3)
+        #self.fc = nn.Conv2d(num_fc_kernels, num_classes, kernel_size=3, padding=1, bias=False)
+        #self.sigmoid = nn.Sigmoid()
+        self.fc = nn.Linear(1024*7*7, num_fc_kernels)
         
     def forward(self, x):
         #x: 3*256*256
+        """
         x = self.msa(x) * x
         out = self.dense_net_121(x) 
         return out
- 
-#AUROC=0.8228, batchsize=512
-class MultiScaleAttention(nn.Module):#spatial attention module
-    def __init__(self):
-        super(MultiScaleAttention, self).__init__()
-        self.aggConv = nn.Conv2d(2, 1, kernel_size=3, padding=1, bias=False)
-        self.sigmoid = nn.Sigmoid()
-        
-    def forward(self, x):
-        avg_out = torch.mean(x, dim=1, keepdim=True)
-        max_out, _ = torch.max(x, dim=1, keepdim=True)
-        x = torch.cat([avg_out, max_out], dim=1)
-        x = self.sigmoid(self.aggConv(x))
+        """
+        """
+        x = self.msa(x) * x
+        x = self.dense_net_121.features(x) #output: 1024*8*8
+        x = self.fc(x) #1024*8*8->14*8*8 
+        x = self.sigmoid(x)
+        x = x.view(x.size(0),x.size(1),x.size(2)*x.size(3)) #14*64
+        tr_out = torch.mean(x, dim=1, keepdim=True).squeeze()
+        bce_out = torch.mean(x, dim=2, keepdim=True).squeeze()
+        return tr_out, bce_out
+        """
+        x = self.msa(x) * x
+        x = self.dense_net_121.features(x) #output: 1024*8*8
+        tr_out = self.rmac(x) #1024
+        x = x.view(x.size(0),-1)
+        x = self.fc(x)
+        bce_out = self.dense_net_121.classifier(x)
+        return tr_out, bce_out
 
-        return x
-        
-"""
 #AUROC=0.8201, batchsize=512
 class MultiScaleAttention(nn.Module):#multi-scal attention module
     def __init__(self):
@@ -76,11 +85,27 @@ class MultiScaleAttention(nn.Module):#multi-scal attention module
         x = self.sigmoid(self.aggConv(x))
 
         return x
+
 """  
-    
+#AUROC=0.8228, batchsize=512
+class MultiScaleAttention(nn.Module):#spatial attention module
+    def __init__(self):
+        super(MultiScaleAttention, self).__init__()
+        self.aggConv = nn.Conv2d(2, 1, kernel_size=3, padding=1, bias=False)
+        self.sigmoid = nn.Sigmoid()
+        
+    def forward(self, x):
+        avg_out = torch.mean(x, dim=1, keepdim=True)
+        max_out, _ = torch.max(x, dim=1, keepdim=True)
+        x = torch.cat([avg_out, max_out], dim=1)
+        x = self.sigmoid(self.aggConv(x))
+
+        return x   
+"""
+
 if __name__ == "__main__":
     #for debug   
-    x = torch.rand(10, 3, 256, 256)#.to(torch.device('cuda:%d'%7))
+    x = torch.rand(10, 3, 224, 224)#.to(torch.device('cuda:%d'%7))
     model = ATNet(num_classes=14, is_pre_trained=True)#.to(torch.device('cuda:%d'%7))
     out = model(x)
     print(out.size())

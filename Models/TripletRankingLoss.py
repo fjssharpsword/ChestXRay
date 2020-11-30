@@ -66,11 +66,49 @@ class TripletRankingLoss(nn.Module):
         else:
             loss = tensor.float(0.0)
         return loss
+
+    """
+    #sampling all pospair and negpair
+    def __init__(self, scale=1, margin=0.25, similarity='cos', **kwargs):
+        super(TripletRankingLoss, self).__init__()
+        self.scale = scale
+        self.margin = margin
+        self.similarity = similarity
+
+    def forward(self, feats, labels):
+        assert feats.size(0) == labels.size(0), \
+            f"feats.size(0): {feats.size(0)} is not equal to labels.size(0): {labels.size(0)}"
+
+        mask = torch.matmul(labels, torch.t(labels))
+        #mask = torch.where(mask==2, torch.zeros_like(mask), mask) #for multi-label
+        pos_mask = mask.triu(diagonal=1)
+        neg_mask = (mask - 1).abs_().triu(diagonal=1)
+        if self.similarity == 'dot':
+            sim_mat = torch.matmul(feats, torch.t(feats))
+        elif self.similarity == 'cos':
+            feats = F.normalize(feats)
+            sim_mat = feats.mm(feats.t())
+        else:
+            raise ValueError('This similarity is not implemented.')
+
+        pos_pair_ = sim_mat[pos_mask == 1]
+        neg_pair_ = sim_mat[neg_mask == 1]
+        #neg_pair_ = sim_mat[neg_mask == 1][0:len(pos_pair_)] #for sampling part normal 
+
+        alpha_p = torch.relu(-pos_pair_ + 1 + self.margin)
+        alpha_n = torch.relu(neg_pair_ + self.margin)
+        margin_p = 1 - self.margin
+        margin_n = self.margin
+        loss_p = torch.sum(torch.exp(-self.scale * alpha_p * (pos_pair_ - margin_p)))
+        loss_n = torch.sum(torch.exp(self.scale * alpha_n * (neg_pair_ - margin_n)))
+        loss = torch.log(1 + loss_p * loss_n)
+        return loss
+    """
     
 if __name__ == "__main__":
     #for debug   
     gt = torch.zeros(512, 14)
-    pred = torch.rand(512, 64)
+    pred = torch.rand(512, 1024)
     for i in range(250):#generate 1 randomly
         row = random.randint(0,511)
         ones_n = random.randint(1,2)
@@ -80,5 +118,5 @@ if __name__ == "__main__":
     #p = torch.rand(512, 14)
     #n = torch.rand(512, 14)
     trl = TripletRankingLoss()
-    loss = trl(pred,gt,sample=False)
+    loss = trl(pred,gt)
     print(loss)

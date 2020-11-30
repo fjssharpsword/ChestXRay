@@ -272,16 +272,15 @@ def get_train_dataloader_full(batch_size, shuffle, num_workers, split_ratio=0.2)
     dataset_train_full = FullTrainDatasetGenerator(path_to_img_dir=PATH_TO_IMAGES_DIR,
                                      path_to_dataset_files=[PATH_TO_TRAIN_FILE, PATH_TO_VAL_FILE], transform=transform_seq)
 
-    #val_size = int(split_ratio * len(dataset_train_full))
-    #train_size = len(dataset_train_full) - val_size
-    #train_dataset, val_dataset = torch.utils.data.random_split(dataset_train_full, [train_size, val_size])
+    val_size = int(split_ratio * len(dataset_train_full))
+    train_size = len(dataset_train_full) - val_size
+    train_dataset, val_dataset = torch.utils.data.random_split(dataset_train_full, [train_size, val_size])
 
-    data_loader_train = DataLoader(dataset=dataset_train_full, batch_size=batch_size,
+    data_loader_train = DataLoader(dataset=train_dataset, batch_size=batch_size,
                                    shuffle=shuffle, num_workers=num_workers, pin_memory=True)
-    #data_loader_val = DataLoader(dataset=val_dataset, batch_size=batch_size,
-                                   #shuffle=shuffle, num_workers=num_workers, pin_memory=True)
-    #return data_loader_train, data_loader_val
-    return data_loader_train
+    data_loader_val = DataLoader(dataset=val_dataset, batch_size=batch_size,
+                                   shuffle=shuffle, num_workers=num_workers, pin_memory=True)
+    return data_loader_train, data_loader_val
 
 if __name__ == "__main__":
     #for debug   
