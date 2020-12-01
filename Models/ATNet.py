@@ -19,6 +19,7 @@ from torch.autograd import Variable
 from PIL import Image
 #defined by myself
 from Models.RMAC import RMAC
+#from RMAC import RMAC
 
 #construct model
 class ATNet(nn.Module):
@@ -43,12 +44,13 @@ class ATNet(nn.Module):
         """
         x = self.msa(x) * x
         x = self.dense_net_121.features(x) #output: 1024*8*8
-        x = self.fc(x) #1024*8*8->14*8*8 
+        x = self.fc(x) #1024*7*7->14*7*7 
         x = self.sigmoid(x)
-        x = x.view(x.size(0),x.size(1),x.size(2)*x.size(3)) #14*64
+        x = x.view(x.size(0),x.size(1),x.size(2)*x.size(3)) #14*49
         tr_out = torch.mean(x, dim=1, keepdim=True).squeeze()
         bce_out = torch.mean(x, dim=2, keepdim=True).squeeze()
         return tr_out, bce_out
+        """
         """
         x = self.msa(x) * x
         x = self.dense_net_121.features(x) #output: 1024*8*8
@@ -57,6 +59,28 @@ class ATNet(nn.Module):
         x = self.fc(x)
         bce_out = self.dense_net_121.classifier(x)
         return tr_out, bce_out
+        """
+        """
+        x = self.msa(x) * x
+        x = self.dense_net_121.features(x) #output: 1024*8*8
+        tr_out = self.rmac(x) #1024
+        bce_out = self.dense_net_121.classifier(tr_out)
+        return tr_out, bce_out
+        """
+        """
+        x = self.msa(x) * x
+        x = self.dense_net_121.features(x) #output: 1024*7*7
+        mac_x = self.rmac(x) #1024
+        x = x.view(x.size(0),-1)
+        x = self.fc(x)*mac_x
+        out = self.dense_net_121.classifier(x)
+        return out
+        """
+        x = self.msa(x) * x
+        x = self.dense_net_121.features(x) #output: 1024*7*7
+        x = self.rmac(x) #1024
+        out = self.dense_net_121.classifier(x)
+        return out
 
 #AUROC=0.8201, batchsize=512
 class MultiScaleAttention(nn.Module):#multi-scal attention module
@@ -105,7 +129,7 @@ class MultiScaleAttention(nn.Module):#spatial attention module
 
 if __name__ == "__main__":
     #for debug   
-    x = torch.rand(10, 3, 224, 224)#.to(torch.device('cuda:%d'%7))
+    x = torch.rand(10, 32, 64, 64)#.to(torch.device('cuda:%d'%7))
     model = ATNet(num_classes=14, is_pre_trained=True)#.to(torch.device('cuda:%d'%7))
     out = model(x)
     print(out.size())

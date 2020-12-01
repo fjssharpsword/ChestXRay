@@ -80,7 +80,7 @@ class TripletRankingLoss(nn.Module):
             f"feats.size(0): {feats.size(0)} is not equal to labels.size(0): {labels.size(0)}"
 
         mask = torch.matmul(labels, torch.t(labels))
-        #mask = torch.where(mask==2, torch.zeros_like(mask), mask) #for multi-label
+        mask = torch.where(mask==2, torch.zeros_like(mask), mask) #for multi-label
         pos_mask = mask.triu(diagonal=1)
         neg_mask = (mask - 1).abs_().triu(diagonal=1)
         if self.similarity == 'dot':

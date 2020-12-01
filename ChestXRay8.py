@@ -102,10 +102,25 @@ def get_test_dataloader(batch_size, shuffle, num_workers):
                                    shuffle=shuffle, num_workers=num_workers, pin_memory=True)
     return data_loader_test
 
+"""
+#for cross-validation
+def get_train_dataloader_full(batch_size, shuffle, num_workers, split_ratio=0.2):
+    dataset_train_full = FullTrainDatasetGenerator(path_to_img_dir=PATH_TO_IMAGES_DIR,
+                                     path_to_dataset_files=[PATH_TO_TRAIN_FILE, PATH_TO_VAL_FILE], transform=transform_seq)
+
+    val_size = int(split_ratio * len(dataset_train_full))
+    train_size = len(dataset_train_full) - val_size
+    train_dataset, val_dataset = torch.utils.data.random_split(dataset_train_full, [train_size, val_size])
+
+    data_loader_train = DataLoader(dataset=train_dataset, batch_size=batch_size,
+                                   shuffle=shuffle, num_workers=num_workers, pin_memory=True)
+    data_loader_val = DataLoader(dataset=val_dataset, batch_size=batch_size,
+                                   shuffle=shuffle, num_workers=num_workers, pin_memory=True)
+    return data_loader_train, data_loader_val
+"""
 #generate box dataset
 PATH_TO_BOX_FILE = './Dataset/fjs_BBox.csv'
-CLASS_NAMES = ['Atelectasis', 'Cardiomegaly', 'Effusion', 'Infiltration', 'Mass', 'Nodule', 'Pneumonia', 
-               'Pneumothorax', 'Consolidation', 'Edema', 'Emphysema', 'Fibrosis', 'Pleural_Thickening', 'Hernia']
+CLASS_NAMES = ['Atelectasis', 'Cardiomegaly', 'Effusion', 'Infiltration', 'Mass', 'Nodule', 'Pneumonia', 'Pneumothorax']
 class BBoxGenerator(Dataset):
     def __init__(self, path_to_img_dir, path_to_dataset_file, transform=None):
         """
@@ -166,121 +181,6 @@ def get_bbox_dataloader(batch_size, shuffle, num_workers):
                                    shuffle=shuffle, num_workers=num_workers, pin_memory=True)
     return data_loader_bbox
 
-#sampling triplet dataset
-class DiseaseDatasetGenerator(Dataset):
-    def __init__(self, path_to_img_dir, path_to_dataset_file, transform=None):
-        """
-        Args:
-            data_dir: path to image directory.
-            image_list_file: path to the file containing images
-                with corresponding labels.
-            transform: optional transform to be applied on a sample.
-        """
-        image_names = []
-        labels = []
-        normal_nums = 15000 #sampling numbers of normal
-        with open(path_to_dataset_file, "r") as f:
-            for line in f:
-                items = line.split()
-                image_name= items[0].split('/')[1]
-                label = items[1:]
-                label = [int(i) for i in label]
-                if (np.array(label).sum()>0):
-                    image_name = os.path.join(path_to_img_dir, image_name)
-                    image_names.append(image_name)
-                    labels.append(label)
-                else: #np.array(label).sum()==0
-                    if normal_nums>0:
-                        image_name = os.path.join(path_to_img_dir, image_name)
-                        image_names.append(image_name)
-                        labels.append(label)
-                        normal_nums = normal_nums - 1
-
-        self.image_names = image_names
-        self.labels = labels
-        self.transform = transform
-
-    def __getitem__(self, index):
-        """
-        Args:
-            index: the index of item
-        Returns:
-            image and its labels
-        """
-        image_name = self.image_names[index]
-        image = Image.open(image_name).convert('RGB')
-        label = self.labels[index]
-        if self.transform is not None:
-            image = self.transform(image)
-        return image, torch.FloatTensor(label)
-
-    def __len__(self):
-        return len(self.image_names)
-
-def get_train_dataloader_sample(batch_size, shuffle, num_workers):
-    dataset_train_sample = DiseaseDatasetGenerator(path_to_img_dir=PATH_TO_IMAGES_DIR,
-                                     path_to_dataset_file=PATH_TO_TRAIN_FILE, transform=transform_seq)
-    data_loader_train_sample = DataLoader(dataset=dataset_train_sample, batch_size=batch_size,
-                                   shuffle=shuffle, num_workers=num_workers, pin_memory=True)
-    return data_loader_train_sample
-
-#sampling triplet dataset
-class FullTrainDatasetGenerator(Dataset):
-    def __init__(self, path_to_img_dir, path_to_dataset_files, transform=None):
-        """
-        Args:
-            data_dir: path to image directory.
-            image_list_file: path to the file containing images
-                with corresponding labels.
-            transform: optional transform to be applied on a sample.
-        """
-        image_names = []
-        labels = []
-        for path_to_dataset_file in path_to_dataset_files:
-            with open(path_to_dataset_file, "r") as f:
-                for line in f:
-                    items = line.split()
-                    image_name= items[0].split('/')[1]
-                    label = items[1:]
-                    label = [int(i) for i in label]
-                    image_name = os.path.join(path_to_img_dir, image_name)
-                    image_names.append(image_name)
-                    labels.append(label)
-    
-        self.image_names = image_names
-        self.labels = labels
-        self.transform = transform
-
-    def __getitem__(self, index):
-        """
-        Args:
-            index: the index of item
-        Returns:
-            image and its labels
-        """
-        image_name = self.image_names[index]
-        image = Image.open(image_name).convert('RGB')
-        label = self.labels[index]
-        if self.transform is not None:
-            image = self.transform(image)
-        return image, torch.FloatTensor(label)
-
-    def __len__(self):
-        return len(self.image_names)
-
-def get_train_dataloader_full(batch_size, shuffle, num_workers, split_ratio=0.2):
-    dataset_train_full = FullTrainDatasetGenerator(path_to_img_dir=PATH_TO_IMAGES_DIR,
-                                     path_to_dataset_files=[PATH_TO_TRAIN_FILE, PATH_TO_VAL_FILE], transform=transform_seq)
-
-    val_size = int(split_ratio * len(dataset_train_full))
-    train_size = len(dataset_train_full) - val_size
-    train_dataset, val_dataset = torch.utils.data.random_split(dataset_train_full, [train_size, val_size])
-
-    data_loader_train = DataLoader(dataset=train_dataset, batch_size=batch_size,
-                                   shuffle=shuffle, num_workers=num_workers, pin_memory=True)
-    data_loader_val = DataLoader(dataset=val_dataset, batch_size=batch_size,
-                                   shuffle=shuffle, num_workers=num_workers, pin_memory=True)
-    return data_loader_train, data_loader_val
 
 if __name__ == "__main__":
     #for debug   
