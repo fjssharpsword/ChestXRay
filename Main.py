@@ -20,7 +20,7 @@ import torchvision
 from skimage.measure import label
  
 #self-defined
-from ChestXRay8 import get_train_dataloader, get_validation_dataloader, get_test_dataloader, get_train_dataloader_full
+from ChestXRay8 import get_train_dataloader, get_validation_dataloader, get_test_dataloader
 from Utils import compute_AUCs, compute_ROCCurve
 from Models.ATNet import ATNet
 #from Models.TripletRankingLoss import TripletRankingLoss
@@ -40,10 +40,8 @@ BATCH_SIZE = 256 + 256
 
 def Train():
     print('********************load data********************')
-    #dataloader_train = get_train_dataloader(batch_size=BATCH_SIZE, shuffle=True, num_workers=8)
-    #dataloader_val = get_validation_dataloader(batch_size=BATCH_SIZE, shuffle=False, num_workers=8)
-    dataloader_train = get_train_dataloader_full(batch_size=BATCH_SIZE, shuffle=True, num_workers=8) #for cross validation
-    dataloader_val = get_test_dataloader(batch_size=BATCH_SIZE, shuffle=False, num_workers=8)
+    dataloader_train = get_train_dataloader(batch_size=BATCH_SIZE, shuffle=True, num_workers=8)
+    dataloader_val = get_validation_dataloader(batch_size=BATCH_SIZE, shuffle=False, num_workers=8)
     print('********************load data succeed!********************')
 
     print('********************load model********************')

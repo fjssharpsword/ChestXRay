@@ -188,12 +188,12 @@ def normal_init(m, mean, stddev, truncated=False):
         m.bias.data.zero_()
 
 if __name__ == '__main__':
-    x = t.rand(10, 512, 32, 32)
+    x = t.rand(10, 1024, 16, 16)
     rpn = RegionProposalNetwork(
-            512, 512,
+            1024, 1024,
             ratios=[0.5, 1, 2],
             anchor_scales=[8, 16, 32],
             feat_stride=16
         )
-    rpn_locs, rpn_scores, rois, roi_indices, anchor = rpn(x, [32, 32])
-    print(anchor)
+    rpn_locs, rpn_scores, rois, roi_indices, anchor = rpn(x, [16, 16])
+    print(rois)
