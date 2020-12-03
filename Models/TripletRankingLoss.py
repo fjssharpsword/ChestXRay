@@ -10,7 +10,8 @@ from typing import Tuple
 
 
 class TripletRankingLoss(nn.Module):
-    
+
+    """
     def __init__(self, m=0.1):
         super(TripletRankingLoss, self).__init__()
         self.m = m 
@@ -66,8 +67,8 @@ class TripletRankingLoss(nn.Module):
         else:
             loss = tensor.float(0.0)
         return loss
-
     """
+    
     #sampling all pospair and negpair
     def __init__(self, scale=1, margin=0.25, similarity='cos', **kwargs):
         super(TripletRankingLoss, self).__init__()
@@ -103,7 +104,6 @@ class TripletRankingLoss(nn.Module):
         loss_n = torch.sum(torch.exp(self.scale * alpha_n * (neg_pair_ - margin_n)))
         loss = torch.log(1 + loss_p * loss_n)
         return loss
-    """
     
 if __name__ == "__main__":
     #for debug   

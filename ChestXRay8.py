@@ -184,8 +184,8 @@ def get_bbox_dataloader(batch_size, shuffle, num_workers):
 
 if __name__ == "__main__":
     #for debug   
-    data_loader_train, data_loader_val = get_train_dataloader_full(batch_size=512, shuffle=True, num_workers=0)
+    data_loader_train = get_train_dataloader(batch_size=512, shuffle=True, num_workers=0)
+    roi_idx = np.array([0,0,0, 1,1,1, 3,3,3, 511,510,511])
     for batch_idx, (image, label) in enumerate(data_loader_train):
-        print(image.size())
-        print(label.size())
-        break
+         roi_label = label[roi_idx]
+         print(roi_label)

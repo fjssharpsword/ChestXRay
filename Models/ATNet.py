@@ -4,6 +4,7 @@ Attention-Guided Network for ChesstXRay
 Author: Jason.Fang
 Update time: 11/16/2020
 """
+import sys
 import re
 import numpy as np
 import torch
@@ -17,13 +18,15 @@ import cv2
 import torchvision.transforms as transforms
 from torch.autograd import Variable
 from PIL import Image
+from torchvision.ops import RoIAlign
 #defined by myself
-from Models.RMAC import RMAC
-#from RMAC import RMAC
+#from Models.RMAC import RMAC
+#sys.path.append('RPN')
+from RPN.RPN import RegionProposalNetwork
 
 #construct model
 class ATNet(nn.Module):
-    def __init__(self, num_classes, is_pre_trained):
+    def __init__(self, num_classes, ROI_CROP=7, is_pre_trained=True):
         super(ATNet, self).__init__()
         self.dense_net_121 = torchvision.models.densenet121(pretrained=is_pre_trained)
         num_fc_kernels = self.dense_net_121.classifier.in_features #1024
@@ -32,15 +35,25 @@ class ATNet(nn.Module):
         #self.rmac = RMAC(level_n=3)
         #self.fc = nn.Conv2d(num_fc_kernels, num_classes, kernel_size=3, padding=1, bias=False)
         #self.sigmoid = nn.Sigmoid()
-        #self.fc = nn.Linear(1024*7*7, num_fc_kernels)
+        self.fc  = nn.Linear(1024*7*7, num_fc_kernels)
+        self.rpn = RegionProposalNetwork(#conv feature 1024*7*7
+            1024, 1024,
+            ratios=[0.5, 1, 2],
+            anchor_scales=[8, 16, 32],
+            feat_stride=16
+        )
+        # RoIAlign layer with crop sizes:
+        self.roi_align = RoIAlign(output_size=(ROI_CROP, ROI_CROP), spatial_scale=1.0, sampling_ratio=-1)
+        self.roicls = nn.Sequential(nn.Linear(3*ROI_CROP*ROI_CROP, num_classes), nn.Sigmoid())
         
     def forward(self, x):
-        #x: 3*256*256
-        
+        #x: N*C*W*H
+    
         x = self.msa(x) * x
         out = self.dense_net_121(x) 
         return out
         
+    
         """
         x = self.msa(x) * x
         x = self.dense_net_121.features(x) #output: 1024*8*8
@@ -82,6 +95,17 @@ class ATNet(nn.Module):
         x = self.rmac(x) #1024
         out = self.dense_net_121.classifier(x)
         return out
+        """
+        """
+        out = self.msa(x) * x
+        out = self.dense_net_121.features(out) #output: 1024*7*7
+        img_cls = self.dense_net_121.classifier(self.fc(out.view(out.size(0),-1))) #image-level classification
+        #region-level classification
+        _, _, rois, roi_indices, _ = self.rpn(out, [224, 224])#imgSize = [224, 224]
+        crops = self.roi_align(x, torch.from_numpy(rois))
+        roi_cls = self.roicls(crops.view(crops.size(0),-1))
+
+        return img_cls, roi_cls, roi_indices
         """
 
 #AUROC=0.8228, batchsize=512
@@ -131,7 +155,7 @@ class MultiScaleAttention(nn.Module):#multi-scal attention module
  
 if __name__ == "__main__":
     #for debug   
-    x = torch.rand(10, 32, 64, 64)#.to(torch.device('cuda:%d'%7))
-    model = ATNet(num_classes=14, is_pre_trained=True)#.to(torch.device('cuda:%d'%7))
-    out = model(x)
-    print(out.size())
+    x = torch.rand(10, 3, 224, 224)#.to(torch.device('cuda:%d'%7))
+    model = ATNet(num_classes=5, is_pre_trained=True)#.to(torch.device('cuda:%d'%7))
+    img_cls, roi_cls, roi_indices = model(x)
+    print(img_cls.size())

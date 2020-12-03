@@ -4,10 +4,15 @@ from torch.nn import functional as F
 import torch as t
 from torch import nn
 
-from bbox_tools import generate_anchor_base
-from creator_tool import ProposalCreator
+from RPN.bbox_tools import generate_anchor_base
+#from bbox_tools import generate_anchor_base
+from RPN.creator_tool import ProposalCreator
+#from creator_tool import ProposalCreator
+from roi_align import RoIAlign      # RoIAlign module
 
+#https://github.com/jwyang/faster-rcnn.pytorch/tree/master/lib/model
 #https://github.com/chenyuntc/simple-faster-rcnn-pytorch/
+
 class RegionProposalNetwork(nn.Module):
     """Region Proposal Network introduced in Faster R-CNN.
     This is Region Proposal Network introduced in Faster R-CNN [#]_.
@@ -188,12 +193,20 @@ def normal_init(m, mean, stddev, truncated=False):
         m.bias.data.zero_()
 
 if __name__ == '__main__':
-    x = t.rand(10, 1024, 16, 16)
+    x = t.rand(10, 3, 224, 224)
+    f = t.rand(10, 1, 224, 224)
     rpn = RegionProposalNetwork(
-            1024, 1024,
+            1, 1,
             ratios=[0.5, 1, 2],
             anchor_scales=[8, 16, 32],
             feat_stride=16
         )
-    rpn_locs, rpn_scores, rois, roi_indices, anchor = rpn(x, [16, 16])
-    print(rois)
+    rpn_locs, rpn_scores, rois, roi_indices, anchor = rpn(f, [224, 224])
+    # RoIAlign layer with crop sizes:
+    crop_height = 7
+    crop_width = 7
+    roi_align = RoIAlign(crop_height, crop_width)
+
+    # make crops:
+    crops = roi_align(x, t.from_numpy(rois), t.from_numpy(roi_indices))
+    print(crops)

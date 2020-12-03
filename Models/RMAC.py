@@ -109,7 +109,7 @@ class RMAC():
 
 if __name__ == "__main__":
     #for debug   
-    fea = torch.rand(512, 1024, 7, 7)
+    fea = torch.rand(512, 1, 224, 224)
     rmac = RMAC(level_n=3)
     regions = rmac(fea)
     print(regions)

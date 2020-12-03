@@ -2,7 +2,7 @@
 """
 Training implementation
 Author: Jason.Fang
-Update time: 11/11/2020
+Update time: 08/12/2020
 """
 import re
 import sys
@@ -27,7 +27,7 @@ from Models.ATNet import ATNet
 
 #command parameters
 parser = argparse.ArgumentParser(description='For ChestXRay')
-parser.add_argument('--model', type=str, default='ATNet', help='ATNet')
+parser.add_argument('--model', type=str, default='CVTEDRNet', help='CVTEDRNet')
 args = parser.parse_args()
 
 #config
@@ -46,8 +46,8 @@ def Train():
 
     print('********************load model********************')
     # initialize and load the model
-    if args.model == 'ATNet':
-        model = ATNet(num_classes=N_CLASSES, is_pre_trained=True).cuda()#initialize model 
+    if args.model == 'CVTEDRNet':
+        model = CVTEDRNet(num_classes=N_CLASSES, is_pre_trained=True).cuda()#initialize model 
     else: 
         print('No required model')
         return #over
@@ -74,10 +74,12 @@ def Train():
                 var_image = torch.autograd.Variable(image).cuda()
                 var_label = torch.autograd.Variable(label).cuda()
                 optimizer.zero_grad()
-                var_output = model(var_image)#forward
+                img_cls, roi_cls, roi_indices = model(var_image)#forward
                 #loss_tr = tr_criterion(var_feat, var_label)
                 #loss_tr.backward(retain_graph=True)#buffer
-                loss_tensor = bce_criterion(var_output, var_label) 
+                loss_cls = bce_criterion(img_cls, var_label) 
+                loss_roi = bce_criterion(roi_cls, var_label[roi_indices]) 
+                loss_tensor = loss_cls + loss_roi
                 loss_tensor.backward() 
                 optimizer.step()##update parameters    
                 #print([x.grad for x in optimizer.param_groups[0]['params']])
@@ -96,11 +98,13 @@ def Train():
                 gt = torch.cat((gt, label), 0)
                 var_image = torch.autograd.Variable(image).cuda()
                 var_label = torch.autograd.Variable(label).cuda()
-                var_output = model(var_image)#forward
-                pred = torch.cat((pred, var_output.data), 0)
-                loss_tensor = bce_criterion(var_output, var_label)   
+                img_cls, roi_cls, roi_indices = model(var_image)#forward
+                loss_cls = bce_criterion(img_cls, var_label) 
+                loss_roi = bce_criterion(roi_cls, var_label[roi_indices]) 
+                loss_tensor = loss_cls + loss_roi
                 sys.stdout.write('\r Epoch: {} / Step: {} : validation loss ={}'.format(epoch+1, batch_idx+1, float('%0.6f'%loss_tensor.item()) ))
                 sys.stdout.flush()
+                pred = torch.cat((img_cls, var_output.data), 0)
                 val_loss.append(loss_tensor.item())
         AUROCs = compute_AUCs(gt, pred, N_CLASSES)
         AUROC_avg = np.array(AUROCs).mean()
@@ -127,8 +131,8 @@ def Test(CKPT_PATH = ''):
 
     print('********************load model********************')
     # initialize and load the model
-    if args.model == 'ATNet':
-        model = ATNet(num_classes=N_CLASSES, is_pre_trained=True).cuda()#initialize model 
+    if args.model == 'CVTEDRNet':
+        model = CVTEDRNet(num_classes=N_CLASSES, is_pre_trained=True).cuda()#initialize model 
     else: 
         print('No required model')
         return #over
@@ -154,8 +158,8 @@ def Test(CKPT_PATH = ''):
             gt = torch.cat((gt, label), 0)
             var_image = torch.autograd.Variable(image).cuda()
             var_label = torch.autograd.Variable(label).cuda()
-            var_output = model(var_image)#forward
-            pred = torch.cat((pred, var_output.data), 0)
+            img_cls, _, _ = model(var_image)#forward
+            pred = torch.cat((img_cls, var_output.data), 0)
             sys.stdout.write('\r testing process: = {}'.format(batch_idx+1))
             sys.stdout.flush()
             

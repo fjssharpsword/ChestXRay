@@ -63,6 +63,33 @@ class OneStage_AnchorGenerator(object):
         self.ctr = ctr
         self.base_anchors = self.gen_base_anchors()
 
+    def gen_base_anchors(self):
+        w = self.base_size
+        h = self.base_size
+        if self.ctr is None:
+            x_ctr = 0.5 * (w - 1)
+            y_ctr = 0.5 * (h - 1)
+        else:
+            x_ctr, y_ctr = self.ctr
+
+        h_ratios = torch.sqrt(self.ratios)
+        w_ratios = 1 / h_ratios
+        if self.scale_major:
+            ws = (w * w_ratios[:, None] * self.scales[None, :]).view(-1)
+            hs = (h * h_ratios[:, None] * self.scales[None, :]).view(-1)
+        else:
+            ws = (w * self.scales[:, None] * w_ratios[None, :]).view(-1)
+            hs = (h * self.scales[:, None] * h_ratios[None, :]).view(-1)
+
+        base_anchors = torch.stack(
+            [
+                x_ctr - 0.5 * (ws - 1), y_ctr - 0.5 * (hs - 1),
+                x_ctr + 0.5 * (ws - 1), y_ctr + 0.5 * (hs - 1)
+            ],
+            dim=-1).round()
+
+        return base_anchors
+
     @property
     def num_base_anchors(self):
         return self.base_anchors.size(0)
@@ -89,6 +116,6 @@ class OneStage_AnchorGenerator(object):
 
 if __name__ == "__main__":
     #for debug   
-    x = torch.rand(10, 3, 224, 224)
+    x = torch.rand(10, 1, 224, 224)
     tsag = TwoStage_AnchorGenerator(base_size=224, scales=[8, 16, 32], ratios=[0.5, 1, 2], scale_major=True, ctr=None)
     print(tsag.base_anchors.size())
