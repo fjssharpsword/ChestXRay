@@ -10,7 +10,6 @@ import os
 import cv2
 import time
 import argparse
-import copy
 import numpy as np
 import torch
 import torch.nn as nn
@@ -19,13 +18,12 @@ from torch.optim import lr_scheduler
 import torch.optim as optim
 import torchvision
 from skimage.measure import label
-import torchvision.ops as ops
+ 
 #self-defined
 from ChestXRay8 import get_train_dataloader, get_validation_dataloader, get_test_dataloader, get_bbox_dataloader
 from Utils.Evaluation import compute_AUCs, compute_ROCCurve, compute_IoUs
 from Utils.CAM import CAM
 from Models.CVTEDRNet import CVTEDRNet
-from RPN.RPN import RegionProposalNetwork
 
 #command parameters
 parser = argparse.ArgumentParser(description='For ChestXRay')
@@ -38,10 +36,9 @@ CLASS_NAMES = ['Atelectasis', 'Cardiomegaly', 'Effusion', 'Infiltration', 'Mass'
                'Pneumothorax', 'Consolidation', 'Edema', 'Emphysema', 'Fibrosis', 'Pleural_Thickening', 'Hernia']
 N_CLASSES = len(CLASS_NAMES)
 MAX_EPOCHS = 20
-BATCH_SIZE = 20#256 + 256
-ROI_CROP = 112
+BATCH_SIZE = 256 + 256
 
-def Train(CKPT_PATH=''):
+def Train():
     print('********************load data********************')
     dataloader_train = get_train_dataloader(batch_size=BATCH_SIZE, shuffle=True, num_workers=8)
     dataloader_val = get_validation_dataloader(batch_size=BATCH_SIZE, shuffle=False, num_workers=8)
@@ -54,70 +51,51 @@ def Train(CKPT_PATH=''):
     else: 
         print('No required model')
         return #over
-    if os.path.isfile(CKPT_PATH):
-        checkpoint = torch.load(CKPT_PATH)
-        model.load_state_dict(checkpoint) #strict=False
-        print("=> loaded model checkpoint: "+CKPT_PATH)
-    model_conv = copy.deepcopy(model) #for get convolutional feature
+
     model = nn.DataParallel(model).cuda()  # make model available multi GPU cores training
     torch.backends.cudnn.benchmark = True  # improve train speed slightly
     bce_criterion = nn.BCELoss() #define binary cross-entropy loss
     optimizer = optim.Adam(model.parameters(), lr=1e-3, betas=(0.9, 0.999), eps=1e-08, weight_decay=1e-5)
     lr_scheduler_model = lr_scheduler.StepLR(optimizer, step_size = 10, gamma = 1)
-
-    RPNModel = RegionProposalNetwork(1024, 1024, ratios=[0.5, 1, 2], anchor_scales=[8, 16, 32], feat_stride=16).cuda()
-    roi_align = RoIAlign(ROI_CROP, ROI_CROP)
     print('********************load model succeed!********************')
 
     print('********************begin training!********************')
     AUROC_best = 0.50
+    CKPT_PATH = '' #path for pre-trained model
     for epoch in range(MAX_EPOCHS):
         since = time.time()
         print('Epoch {}/{}'.format(epoch+1 , MAX_EPOCHS))
         print('-' * 10)
         model.train()  #set model to training mode
-        model_conv.eval() 
         train_loss = []
         with torch.autograd.enable_grad():
             for batch_idx, (image, label) in enumerate(dataloader_train):  
                 var_image = torch.autograd.Variable(image).cuda()
                 var_label = torch.autograd.Variable(label).cuda()
-                var_feature = model_conv.dense_net_121.features(var_image) #get feature maps
-
-                h, w = image.shape[2:]
-                _, _, rois, roi_indices, _ = RPNModel(var_feature, [h, w])
-                var_crops = roi_align(var_image, torch.from_numpy(rois).cuda(), torch.from_numpy(roi_indices).cuda()) #
-
                 optimizer.zero_grad()
-                var_output = model(var_crops)#forward
-                loss_tensor = bce_criterion(var_output, var_label[roi_indices]) 
+                var_output = model(var_image)#forward
+                loss_tensor = bce_criterion(var_output, var_label) 
                 loss_tensor.backward() 
                 optimizer.step()##update parameters    
                 #print([x.grad for x in optimizer.param_groups[0]['params']])
                 sys.stdout.write('\r Epoch: {} / Step: {} : train loss = {}'.format(epoch+1, batch_idx+1, float('%0.6f'%loss_tensor.item()) ))
                 sys.stdout.flush()
                 train_loss.append(loss_tensor.item())
-        lr_scheduler_model.step()  #about lr and gamma
-        print("\r Eopch: %5d train loss = %.6f" % (epoch + 1, np.mean(train_loss)))
+        print("\r Eopch: %5d train loss = %.6f" % (epoch + 1, np.mean(train_loss))) 
 
-        model.eval()
+        model.eval()#turn to test mode
         val_loss = []
         gt = torch.FloatTensor().cuda()
         pred = torch.FloatTensor().cuda()
         with torch.autograd.no_grad():
             for batch_idx, (image, label) in enumerate(dataloader_val):
+                label = label.cuda()
+                gt = torch.cat((gt, label), 0)
                 var_image = torch.autograd.Variable(image).cuda()
                 var_label = torch.autograd.Variable(label).cuda()
-                var_feature = model_conv.dense_net_121.features(var_image) #get feature maps
-
-                h, w = image.shape[2:]
-                _, _, rois, roi_indices, _ = RPNModel(var_feature, [h, w])
-                var_crops = roi_align(var_image, torch.from_numpy(rois).cuda(), torch.from_numpy(roi_indices).cuda())
-                
-                var_output = model(var_crops)#forward
+                var_output = model(var_image)#forward
                 pred = torch.cat((pred, var_output.data), 0)
-                loss_tensor = bce_criterion(var_output, var_label[roi_indices]) 
-                gt = torch.cat((gt, var_label[roi_indices]), 0)
+                loss_tensor = bce_criterion(var_output, var_label) 
                 sys.stdout.write('\r Epoch: {} / Step: {} : validation loss ={}'.format(epoch+1, batch_idx+1, float('%0.6f'%loss_tensor.item()) ))
                 sys.stdout.flush()
                 val_loss.append(loss_tensor.item())
@@ -128,11 +106,12 @@ def Train(CKPT_PATH=''):
         #save checkpoint
         if AUROC_best < AUROC_avg:
             AUROC_best = AUROC_avg
-            CKPT_PATH = './Pre-trained/'+ args.model +'/best_model_roi.pkl'
+            CKPT_PATH = './Pre-trained/'+ args.model +'/best_model.pkl'
             #torch.save(model.state_dict(), CKPT_PATH)
-            torch.save(model.module.state_dict(), CKPT_PATH_ROI) #Saving torch.nn.DataParallel Models
+            torch.save(model.module.state_dict(), CKPT_PATH) #Saving torch.nn.DataParallel Models
             print(' Epoch: {} model has been already save!'.format(epoch+1))
-        
+
+        lr_scheduler_model.step()  #about lr and gamma
         time_elapsed = time.time() - since
         print('Training epoch: {} completed in {:.0f}m {:.0f}s'.format(epoch+1, time_elapsed // 60 , time_elapsed % 60))
     return CKPT_PATH
@@ -149,11 +128,13 @@ def Test(CKPT_PATH = ''):
     else: 
         print('No required model')
         return #over
+
+    #model = nn.DataParallel(model).cuda()  # make model available multi GPU cores training
+    torch.backends.cudnn.benchmark = True  # improve train speed slightly
     if os.path.isfile(CKPT_PATH):
         checkpoint = torch.load(CKPT_PATH)
         model.load_state_dict(checkpoint) #strict=False
         print("=> loaded model checkpoint: "+CKPT_PATH)
-    torch.backends.cudnn.benchmark = True  # improve train speed slightly
     print('******************** load model succeed!********************')
 
     print('******* begin testing!*********')
@@ -186,7 +167,7 @@ def Test(CKPT_PATH = ''):
 
 def BoxTest(CKPT_PATH, thresholds):
     print('********************load data********************')
-    dataloader_bbox = get_bbox_dataloader(batch_size=1, shuffle=False, num_workers=0)
+    dataloader_test = get_test_dataloader(batch_size=BATCH_SIZE, shuffle=False, num_workers=8)
     print('********************load data succeed!********************')
 
     print('********************load model********************')
@@ -196,15 +177,19 @@ def BoxTest(CKPT_PATH, thresholds):
     else: 
         print('No required model')
         return #over
+
+    #model = nn.DataParallel(model).cuda()  # make model available multi GPU cores training
+    torch.backends.cudnn.benchmark = True  # improve train speed slightly
     if os.path.isfile(CKPT_PATH):
         checkpoint = torch.load(CKPT_PATH)
         model.load_state_dict(checkpoint) #strict=False
         print("=> loaded model checkpoint: "+CKPT_PATH)
-    torch.backends.cudnn.benchmark = True  # improve train speed slightly
     print('******************** load model succeed!********************')
 
     print('******* begin bounding box testing!*********')
+    #predict bounding box
     #np.set_printoptions(suppress=True) #to float
+    dataloader_bbox = get_bbox_dataloader(batch_size=1, shuffle=False, num_workers=0)
     cls_weights = list(model.parameters())
     #for name, layer in model.named_modules():
     #    print(name, layer)
@@ -235,10 +220,10 @@ def BoxTest(CKPT_PATH, thresholds):
     print('The average IoU is {:.4f}'.format(np.array(IoUs).mean()))
 
 def main():
-    CKPT_PATH ='./Pre-trained/'+ args.model +'/best_model-8215.pkl' #for debug
-    CKPT_PATH_ROI = Train(CKPT_PATH) #for training
-    thresholds = Test(CKPT_PATH_ROI) #for test
-    BoxTest(CKPT_PATH_ROI, thresholds)
+    CKPT_PATH = Train() #for training
+    #CKPT_PATH ='./Pre-trained/'+ args.model +'/best_model.pkl' #for debug
+    thresholds = Test(CKPT_PATH) #for test
+    BoxTest(CKPT_PATH, thresholds)
 
 if __name__ == '__main__':
     main()
