@@ -57,7 +57,7 @@ class ROIGenerator(object):
                 cam_img = np.uint8(255 * cam_img)
                 cam_img = cv2.resize(cam_img, size_upsample)
                 x_c, y_c = self.returnBox(cam_img)
-                roi = self.roi_pool(image, [])
+                roi = self.roi_pool(image, [x_c, y_c])  ???
 
                 rois = torch.cat((rois, roi), 0)
                 roi_label =  np.zeros(len(label[i]))

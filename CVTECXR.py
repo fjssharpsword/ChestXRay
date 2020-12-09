@@ -2,12 +2,21 @@ import torch
 from torch.utils.data import Dataset
 from torch.utils.data import DataLoader
 import torchvision.transforms as transforms
-from PIL import Image
 import os
 import pandas as pd
 import numpy as np
 import time
 import random
+from sklearn.model_selection import train_test_split
+import os
+import torch.nn.functional as F
+import scipy
+import SimpleITK as sitk
+import pydicom
+from scipy import ndimage as ndi
+from PIL import Image
+import PIL.ImageOps 
+
 """
 Dataset: CVTE ChestXRay
 """
@@ -24,13 +33,16 @@ class DatasetGenerator(Dataset):
         image_names = []
         labels = []
         with open(path_to_dataset_file, "r") as f:
-            for line in f:
-                items = line.split()
-                image_name= items[0].split('/')[1]
-                label = items[1:]
-                label = [int(i) for i in label]
-                image_name = os.path.join(path_to_img_dir, image_name)
+            for line in f: 
+                items = line.split(',') 
+                #sample: image\DX\20190124\DR190124024_1.2.156.600734.2466462228.11372.1548290939.55
+                image_path = items[0].split('\\')[-1]
+                dir_name = image_path.split('_')[0]
+                file_name = image_path.split('_')[1]
+                image_name = os.path.join(path_to_img_dir, dir_name, file_name)
                 image_names.append(image_name)
+
+                label = int(items[1])
                 labels.append(label)
 
         self.image_names = image_names
@@ -55,22 +67,19 @@ class DatasetGenerator(Dataset):
         return len(self.image_names)
 
 
-normalize = transforms.Normalize(
-   mean=[0.485, 0.456, 0.406],
-   std=[0.229, 0.224, 0.225]
-)
-
+#config 
 transform_seq = transforms.Compose([
    transforms.Resize((256,256)),
-   transforms.CenterCrop(224),
+   transforms.RandomCrop(224),
+   #transforms.CenterCrop(224),
    transforms.ToTensor(),
-   normalize,
+   transforms.Normalize(mean=[0.485, 0.456, 0.406],std=[0.229, 0.224, 0.225]),
 ])
 
-PATH_TO_IMAGES_DIR = '/data/fjsdata/NIH-CXR/images/images/'
-PATH_TO_TRAIN_FILE = './Dataset/train.txt'
-PATH_TO_VAL_FILE = './Dataset/val.txt'
-PATH_TO_TEST_FILE = './Dataset/test.txt'
+PATH_TO_IMAGES_DIR = '/data/fjsdata/CVTEDR/images'
+PATH_TO_TRAIN_FILE = '/data/fjsdata/CVTEDR/cxr_train.txtt'
+PATH_TO_VAL_FILE = '/data/fjsdata/CVTEDR/cxr_val.txt'
+PATH_TO_TEST_FILE = '/data/fjsdata/CVTEDR/cxr_test.txt'
 
 def get_train_dataloader(batch_size, shuffle, num_workers):
     dataset_train = DatasetGenerator(path_to_img_dir=PATH_TO_IMAGES_DIR,
@@ -125,16 +134,66 @@ def CVTEDR_Filter():
     #save 
     cxr.to_csv('/data/fjsdata/CVTEDR/CXR20201204.csv', index=False, header=True, sep=',')
 
+def splitCVTEDR(dataset_path):
 
+    datas = pd.read_csv(dataset_path, sep=',')
+    datas = datas.drop(datas[datas['阳性标识']==3.0].index)
+    images = datas[['图片路径']]
+    labels = datas[['阳性标识']]
+    #print("\r CXR Columns: {}".format(datas.columns))
+    X_train, X_test, y_train, y_test = train_test_split(images, labels, test_size=0.20, random_state=11)
+    X_train, X_val, y_train, y_val = train_test_split(X_train, y_train, test_size=0.10, random_state=22)
+    print("\r trainset shape: {}".format(y_train.shape)) 
+    print("\r trainset distribution: {}".format(y_train['阳性标识'].value_counts()))
+    print("\r valset shape: {}".format(y_val.shape)) 
+    print("\r trainset distribution: {}".format(y_val['阳性标识'].value_counts()))
+    print("\r testset shape: {}".format(y_test.shape)) 
+    print("\r trainset distribution: {}".format(y_test['阳性标识'].value_counts()))
+    trainset = pd.concat([X_train, y_train], axis=1).to_csv('/data/fjsdata/CVTEDR/cxr_train.txt', index=False, header=False, sep=',')
+    valset = pd.concat([X_val, y_val], axis=1).to_csv('/data/fjsdata/CVTEDR/cxr_val.txt', index=False, header=False, sep=',')
+    testset = pd.concat([X_test, y_test], axis=1).to_csv('/data/fjsdata/CVTEDR/cxr_test.txt', index=False, header=False, sep=',')
+
+def getDicomImage(dicom_path):
+        lstFilesDCM = []
+        for root, dirs, files in os.walk(series_path):
+            for file in files:
+                lstFilesDCM.append(os.path.join(root, file))
+        
+        slices = [pydicom.read_file(s) for s in lstFilesDCM]
+
+        # filter PA/AP, SeriesDescription
+        # the front view and lateral view can be chosen by model with MIMIC-CXRv2.0 dataset 
+        si, ss = 0, slices[0]
+        for i, s in enumerate(slices):
+            if 'PA' in s.SeriesDescription or 'AP' in s.SeriesDescription:
+                si, ss = i, slices[i]
+
+        sitk_image = sitk.ReadImage(lstFilesDCM[si])
+
+        img = sitk.GetArrayFromImage(sitk_image)
+        img = np.squeeze(img, axis=0)
+
+        img = (img-np.min(img))/(np.max(img)-np.min(img)) * 255
+        img = Image.fromarray(img.astype('uint8')).convert('RGB')#numpy to PIL
+
+        #ss.PhotometricInterpretation: 'MONOCHROME1'=flip and 'MONOCHROME2'=normal
+        if 'MONOCHROME1' in ss.PhotometricInterpretation:
+            img = PIL.ImageOps.invert(img) #flip the white and black, RGB
+
+        return img, ss
+        
 if __name__ == "__main__":
 
     #CVTEDR_Filter()
-    
+    #splitCVTEDR('/data/fjsdata/CVTEDR/CXR20201204.csv')
+    getDicomImage('/data/fjsdata/CVTEDR/images')
+
     #for debug   
     data_loader_train = get_train_dataloader(batch_size=512, shuffle=True, num_workers=0)
     roi_idx = np.array([0,0,0, 1,1,1, 3,3,3, 511,510,511])
     for batch_idx, (image, label) in enumerate(data_loader_train):
          roi_label = label[roi_idx]
          print(roi_label)
+    
     
     

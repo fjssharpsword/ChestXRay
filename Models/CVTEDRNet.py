@@ -18,6 +18,7 @@ import cv2
 import torchvision.transforms as transforms
 from torch.autograd import Variable
 from PIL import Image
+from Models.RMAC import RMAC
 
 #construct model
 class CVTEDRNet(nn.Module):
@@ -27,19 +28,30 @@ class CVTEDRNet(nn.Module):
         num_fc_kernels = self.dense_net_121.classifier.in_features #1024
         self.dense_net_121.classifier = nn.Sequential(nn.Linear(num_fc_kernels, num_classes), nn.Sigmoid())
         self.msa = MultiScaleAttention()
+        self.rmac = RMAC(level_n=3)
+
+        #self.sa = SpatialAttention()
+        """
+        self.fcl = nn.Linear(1024*7*7, num_fc_kernels)
+        self.classifier = nn.Sequential(nn.Linear(num_fc_kernels, num_classes),
+                                        nn.Sigmoid()
+                                        ) 
+        """
         """
         self.classifier = nn.Sequential(
                                         nn.Conv2d(num_fc_kernels, num_classes, kernel_size=3, padding=1, bias=False), #1024*7*7->14*7*7
                                         nn.AdaptiveAvgPool2d(1), #14*7*7->14*1*1
                                         nn.Sigmoid()
                                         )
-        #self.sa = SpatialAttention()
         """
+        
     def forward(self, x):
         #x: N*C*W*H
+        """
         x = self.msa(x) * x
         x = self.dense_net_121(x)
         return x
+        """
 
         """
         x = self.msa(x) * x
@@ -47,6 +59,19 @@ class CVTEDRNet(nn.Module):
         x = self.classifier(x).squeeze()
         return x
         """
+        
+        x = self.msa(x) * x
+        x = self.dense_net_121.features(x)
+        #x = x.view(x.size(0),x.size(1),x.size(2)*x.size(3)) #7*7
+        #x, _ = torch.max(x, dim=2, keepdim=True)
+        #x, _ = torch.max(x, dim=3, keepdim=True)
+        x = self.rmac(x) 
+        #x = x.view(x.size(0),-1) 
+        #x = self.fcl(x) * x_w
+        #x = self.dense_net_121.classifier(x.squeeze())
+        x = self.dense_net_121.classifier(x)
+        return x
+        
         
 class MultiScaleAttention(nn.Module):#multi-scal attention module
     def __init__(self):

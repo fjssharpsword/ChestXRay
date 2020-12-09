@@ -16,7 +16,7 @@ https://nihcc.app.box.com/v/ChestXray-NIHCC/folder/36938765345
 2）Label:['Atelectasis', 'Cardiomegaly', 'Effusion','Infiltration', 'Mass', 'Nodule', 'Pneumonia', \
         'Pneumothorax', 'Consolidation', 'Edema', 'Emphysema', 'Fibrosis', 'Pleural_Thickening', 'Hernia']
 """
-
+#generate dataset 
 class DatasetGenerator(Dataset):
     def __init__(self, path_to_img_dir, path_to_dataset_file, transform=None):
         """
@@ -28,15 +28,16 @@ class DatasetGenerator(Dataset):
         """
         image_names = []
         labels = []
-        with open(path_to_dataset_file, "r") as f:
-            for line in f:
-                items = line.split()
-                image_name= items[0].split('/')[1]
-                label = items[1:]
-                label = [int(i) for i in label]
-                image_name = os.path.join(path_to_img_dir, image_name)
-                image_names.append(image_name)
-                labels.append(label)
+        for file_path in path_to_dataset_file:
+            with open(file_path, "r") as f:
+                for line in f:
+                    items = line.split()
+                    image_name= items[0].split('/')[1]
+                    label = items[1:]
+                    label = [int(i) for i in label]
+                    image_name = os.path.join(path_to_img_dir, image_name)
+                    image_names.append(image_name)
+                    labels.append(label)
 
         self.image_names = image_names
         self.labels = labels
@@ -59,68 +60,7 @@ class DatasetGenerator(Dataset):
     def __len__(self):
         return len(self.image_names)
 
-
-normalize = transforms.Normalize(
-   mean=[0.485, 0.456, 0.406],
-   std=[0.229, 0.224, 0.225]
-)
-
-transform_seq = transforms.Compose([
-   transforms.Resize((256,256)),
-   transforms.CenterCrop(224),
-   transforms.ToTensor(),
-   normalize,
-])
-
-PATH_TO_IMAGES_DIR = '/data/fjsdata/NIH-CXR/images/images/'
-PATH_TO_TRAIN_FILE = './Dataset/train.txt'
-PATH_TO_VAL_FILE = './Dataset/val.txt'
-PATH_TO_TEST_FILE = './Dataset/test.txt'
-
-def get_train_dataloader(batch_size, shuffle, num_workers):
-    dataset_train = DatasetGenerator(path_to_img_dir=PATH_TO_IMAGES_DIR,
-                                     path_to_dataset_file=PATH_TO_TRAIN_FILE, transform=transform_seq)
-    #sampler_train = torch.utils.data.distributed.DistributedSampler(dataset_train) #for multi cpu and multi gpu
-    #data_loader_train = DataLoader(dataset=dataset_train, batch_size=batch_size, sampler = sampler_train, 
-                                   #shuffle=shuffle, num_workers=num_workers, pin_memory=True)
-    data_loader_train = DataLoader(dataset=dataset_train, batch_size=batch_size,
-                                   shuffle=shuffle, num_workers=num_workers, pin_memory=True)
-    return data_loader_train
-
-def get_validation_dataloader(batch_size, shuffle, num_workers):
-    dataset_validation = DatasetGenerator(path_to_img_dir=PATH_TO_IMAGES_DIR,
-                                          path_to_dataset_file=PATH_TO_VAL_FILE, transform=transform_seq)
-    data_loader_validation = DataLoader(dataset=dataset_validation, batch_size=batch_size,
-                                   shuffle=shuffle, num_workers=num_workers, pin_memory=True)
-    return data_loader_validation
-
-
-def get_test_dataloader(batch_size, shuffle, num_workers):
-    dataset_test = DatasetGenerator(path_to_img_dir=PATH_TO_IMAGES_DIR,
-                                    path_to_dataset_file=PATH_TO_TEST_FILE, transform=transform_seq)
-    data_loader_test = DataLoader(dataset=dataset_test, batch_size=batch_size,
-                                   shuffle=shuffle, num_workers=num_workers, pin_memory=True)
-    return data_loader_test
-
-"""
-#for cross-validation
-def get_train_dataloader_full(batch_size, shuffle, num_workers, split_ratio=0.2):
-    dataset_train_full = FullTrainDatasetGenerator(path_to_img_dir=PATH_TO_IMAGES_DIR,
-                                     path_to_dataset_files=[PATH_TO_TRAIN_FILE, PATH_TO_VAL_FILE], transform=transform_seq)
-
-    val_size = int(split_ratio * len(dataset_train_full))
-    train_size = len(dataset_train_full) - val_size
-    train_dataset, val_dataset = torch.utils.data.random_split(dataset_train_full, [train_size, val_size])
-
-    data_loader_train = DataLoader(dataset=train_dataset, batch_size=batch_size,
-                                   shuffle=shuffle, num_workers=num_workers, pin_memory=True)
-    data_loader_val = DataLoader(dataset=val_dataset, batch_size=batch_size,
-                                   shuffle=shuffle, num_workers=num_workers, pin_memory=True)
-    return data_loader_train, data_loader_val
-"""
 #generate box dataset
-PATH_TO_BOX_FILE = './Dataset/fjs_BBox.csv'
-CLASS_NAMES = ['Atelectasis', 'Cardiomegaly', 'Effusion', 'Infiltration', 'Mass', 'Nodule', 'Pneumonia', 'Pneumothorax']
 class BBoxGenerator(Dataset):
     def __init__(self, path_to_img_dir, path_to_dataset_file, transform=None):
         """
@@ -174,6 +114,54 @@ class BBoxGenerator(Dataset):
     def __len__(self):
         return len(self.image_names)
 
+#config 
+transform_seq = transforms.Compose([
+   transforms.Resize((256,256)),
+   transforms.RandomCrop(224),
+   #transforms.CenterCrop(224),
+   transforms.ToTensor(),
+   transforms.Normalize(mean=[0.485, 0.456, 0.406],std=[0.229, 0.224, 0.225]),
+])
+transform_seq_amplify = transforms.Compose([
+   transforms.Resize((256,256)),
+   transforms.FiveCrop(224),
+   transforms.Lambda(lambda crops: torch.stack([transforms.ToTensor()(crop) for crop in crops])),
+   transforms.Lambda(lambda crops: torch.stack([transforms.Normalize(mean=[0.485, 0.456, 0.406],std=[0.229, 0.224, 0.225])(crop) for crop in crops])),
+])
+
+PATH_TO_IMAGES_DIR = '/data/fjsdata/NIH-CXR/images/images/'
+PATH_TO_TRAIN_FILE = './Dataset/train.txt'
+PATH_TO_VAL_FILE = './Dataset/val.txt'
+PATH_TO_TEST_FILE = './Dataset/test.txt'
+PATH_TO_BOX_FILE = './Dataset/fjs_BBox.csv'
+CLASS_NAMES = ['Atelectasis', 'Cardiomegaly', 'Effusion', 'Infiltration', 'Mass', 'Nodule', 'Pneumonia', 
+               'Pneumothorax', 'Consolidation', 'Edema', 'Emphysema', 'Fibrosis', 'Pleural_Thickening', 'Hernia']
+
+def get_train_dataloader(batch_size, shuffle, num_workers):
+    dataset_train = DatasetGenerator(path_to_img_dir=PATH_TO_IMAGES_DIR,
+                                     path_to_dataset_file=[PATH_TO_TRAIN_FILE], transform=transform_seq)
+    #sampler_train = torch.utils.data.distributed.DistributedSampler(dataset_train) #for multi cpu and multi gpu
+    #data_loader_train = DataLoader(dataset=dataset_train, batch_size=batch_size, sampler = sampler_train, 
+                                   #shuffle=shuffle, num_workers=num_workers, pin_memory=True)
+    data_loader_train = DataLoader(dataset=dataset_train, batch_size=batch_size,
+                                   shuffle=shuffle, num_workers=num_workers, pin_memory=True)
+    return data_loader_train
+
+def get_validation_dataloader(batch_size, shuffle, num_workers):
+    dataset_validation = DatasetGenerator(path_to_img_dir=PATH_TO_IMAGES_DIR,
+                                          path_to_dataset_file=[PATH_TO_VAL_FILE], transform=transform_seq)
+    data_loader_validation = DataLoader(dataset=dataset_validation, batch_size=batch_size,
+                                   shuffle=shuffle, num_workers=num_workers, pin_memory=True)
+    return data_loader_validation
+
+
+def get_test_dataloader(batch_size, shuffle, num_workers):
+    dataset_test = DatasetGenerator(path_to_img_dir=PATH_TO_IMAGES_DIR,
+                                    path_to_dataset_file=[PATH_TO_TEST_FILE], transform=transform_seq)
+    data_loader_test = DataLoader(dataset=dataset_test, batch_size=batch_size,
+                                   shuffle=shuffle, num_workers=num_workers, pin_memory=True)
+    return data_loader_test
+
 def get_bbox_dataloader(batch_size, shuffle, num_workers):
     dataset_bbox = BBoxGenerator(path_to_img_dir=PATH_TO_IMAGES_DIR, 
                                  path_to_dataset_file=PATH_TO_BOX_FILE, transform=transform_seq)
@@ -181,6 +169,20 @@ def get_bbox_dataloader(batch_size, shuffle, num_workers):
                                    shuffle=shuffle, num_workers=num_workers, pin_memory=True)
     return data_loader_bbox
 
+#for cross-validation
+def get_train_dataloader_full(batch_size, shuffle, num_workers, split_ratio=0.1):
+    dataset_train_full = DatasetGenerator(path_to_img_dir=PATH_TO_IMAGES_DIR,
+                                         path_to_dataset_file=[PATH_TO_TRAIN_FILE, PATH_TO_VAL_FILE], transform=transform_seq)
+
+    val_size = int(split_ratio * len(dataset_train_full))
+    train_size = len(dataset_train_full) - val_size
+    train_dataset, val_dataset = torch.utils.data.random_split(dataset_train_full, [train_size, val_size])
+
+    data_loader_train = DataLoader(dataset=train_dataset, batch_size=batch_size,
+                                   shuffle=shuffle, num_workers=num_workers, pin_memory=True)
+    data_loader_val = DataLoader(dataset=val_dataset, batch_size=batch_size,
+                                   shuffle=shuffle, num_workers=num_workers, pin_memory=True)
+    return data_loader_train, data_loader_val
 
 if __name__ == "__main__":
     #for debug   
