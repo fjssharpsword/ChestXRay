@@ -2,7 +2,7 @@
 """
 Attention-Guided Network for ChesstXRay 
 Author: Jason.Fang
-Update time: 10/12/2020
+Update time: 08/12/2020
 """
 import sys
 import re
@@ -19,17 +19,32 @@ import cv2
 import torchvision.transforms as transforms
 from torch.autograd import Variable
 from PIL import Image
+#from Models.RMAC import RMAC
 
 #construct model
 class CXRClassifier(nn.Module):
-    def __init__(self, num_classes, is_pre_trained=True, is_roi=False):
+    def __init__(self, num_classes, is_pre_trained=True):
         super(CXRClassifier, self).__init__()
         self.dense_net_121 = torchvision.models.densenet121(pretrained=is_pre_trained)
         num_fc_kernels = self.dense_net_121.classifier.in_features #1024
         self.dense_net_121.classifier = nn.Sequential(nn.Linear(num_fc_kernels, num_classes), nn.Sigmoid())
         self.msa = MultiScaleAttention()
+
+        #self.rmac = RMAC(level_n=3)
         #self.sa = SpatialAttention()
-        self.is_roi =  is_roi
+        """
+        self.fcl = nn.Linear(1024*7*7, num_fc_kernels)
+        self.classifier = nn.Sequential(nn.Linear(num_fc_kernels, num_classes),
+                                        nn.Sigmoid()
+                                        ) 
+        """
+        """
+        self.classifier = nn.Sequential(
+                                        nn.Conv2d(num_fc_kernels, num_classes, kernel_size=3, padding=1, bias=False), #1024*7*7->14*7*7
+                                        nn.AdaptiveAvgPool2d(1), #14*7*7->14*1*1
+                                        nn.Sigmoid()
+                                        )
+        """
         
     def forward(self, x):
         #x: N*C*W*H
@@ -38,8 +53,26 @@ class CXRClassifier(nn.Module):
         x = self.dense_net_121(x)
         return x
         """
-        if self.is_roi == False: #for image training
-            x = self.msa(x) * x
+        """
+        x = self.msa(x) * x
+        x = self.dense_net_121.features(x)
+        x = self.classifier(x).squeeze()
+        return x
+        """
+        """
+        x = self.msa(x) * x
+        x = self.dense_net_121.features(x)
+        #x = x.view(x.size(0),x.size(1),x.size(2)*x.size(3)) #7*7
+        #x, _ = torch.max(x, dim=2, keepdim=True)
+        #x, _ = torch.max(x, dim=3, keepdim=True)
+        x = self.rmac(x) 
+        #x = x.view(x.size(0),-1) 
+        #x = self.fcl(x) * x_w
+        #x = self.dense_net_121.classifier(x.squeeze())
+        x = self.dense_net_121.classifier(x)
+        return x
+        """
+        x = self.msa(x) * x
         conv_fea = self.dense_net_121.features(x)
         out = F.relu(conv_fea, inplace=True)
         fc_fea = F.avg_pool2d(out, kernel_size=7, stride=1).view(conv_fea.size(0), -1)
@@ -178,24 +211,24 @@ class FusionClassifier(nn.Module):
 
 if __name__ == "__main__":
     #for debug   
-    img = torch.rand(32, 3, 224, 224).to(torch.device('cuda:%d'%4))
-    label = torch.zeros(32, 14)
-    for i in range(32):#generate 1 randomly
+    img = torch.rand(10, 3, 224, 224).to(torch.device('cuda:%d'%7))
+    label = torch.zeros(10, 14)
+    for i in range(10):#generate 1 randomly
         ones_n = random.randint(1,2)
         col = [random.randint(0,13) for _ in range(ones_n)]
         label[i, col] = 1
-    model_img = CXRClassifier(num_classes=14, is_pre_trained=True, is_roi=False).to(torch.device('cuda:%d'%4))
+    model_img = CXRClassifier(num_classes=14, is_pre_trained=True).to(torch.device('cuda:%d'%7))
     conv_fea_img, fc_fea_img, out_img = model_img(img)
     roigen = ROIGenerator()
     cls_weights = list(model_img.parameters())
     weight_softmax = np.squeeze(cls_weights[-5].data.cpu().numpy())
     roi = roigen.ROIGeneration(img.cpu(), conv_fea_img, weight_softmax, label)
-    model_roi = CXRClassifier(num_classes=14, is_pre_trained=True, is_roi=True).to(torch.device('cuda:%d'%4))
-    var_roi = torch.autograd.Variable(roi).to(torch.device('cuda:%d'%4))
+    model_roi = CXRClassifier(num_classes=14, is_pre_trained=True).to(torch.device('cuda:%d'%7))
+    var_roi = torch.autograd.Variable(roi).to(torch.device('cuda:%d'%7))
     _, fc_fea_roi, out_roi = model_roi(var_roi)
-    model_fusion = FusionClassifier(input_size = 2048, output_size = 14).to(torch.device('cuda:%d'%4))
+    model_fusion = FusionClassifier(input_size = 2048, output_size = 14).to(torch.device('cuda:%d'%7))
     fc_fea_fusion = torch.cat((fc_fea_img,fc_fea_roi), 1)
-    var_fusion = torch.autograd.Variable(fc_fea_fusion).to(torch.device('cuda:%d'%4))
+    var_fusion = torch.autograd.Variable(fc_fea_fusion).to(torch.device('cuda:%d'%7))
     out_fusion = model_fusion(var_fusion)
     print(out_fusion.size())
 

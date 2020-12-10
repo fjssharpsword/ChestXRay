@@ -8,7 +8,7 @@ import numpy as np
 import time
 import random
 from sklearn.model_selection import train_test_split
-import os
+import sys
 import torch.nn.functional as F
 import scipy
 import SimpleITK as sitk
@@ -153,47 +153,81 @@ def splitCVTEDR(dataset_path):
     valset = pd.concat([X_val, y_val], axis=1).to_csv('/data/fjsdata/CVTEDR/cxr_val.txt', index=False, header=False, sep=',')
     testset = pd.concat([X_test, y_test], axis=1).to_csv('/data/fjsdata/CVTEDR/cxr_test.txt', index=False, header=False, sep=',')
 
-def getDicomImage(dicom_path):
-        lstFilesDCM = []
-        for root, dirs, files in os.walk(series_path):
-            for file in files:
-                lstFilesDCM.append(os.path.join(root, file))
+def getDicomImage(dicom_path, dataset_path):
+
+    image_path = '/data/fjsdata/CVTEDR/images'
+    datas = pd.read_csv(dataset_path, sep=',')
+    dicoms = np.array(datas['图片路径']).tolist()
+    labels =np.array(datas['阳性标识']).tolist()
+    print('image number:{}'.format(len(dicoms)))
+
+    images = []
+    labels_new = []
+    for idx in range(len(dicoms)):
+        #sample: image\DX\20190124\DR190124024_1.2.156.600734.2466462228.11372.1548290939.55
+        path = dicoms[idx].split('\\')[-1]
+        dir = path.split('_')[0]
+        file = path.split('_')[1]
+        series_path = os.path.join(dicom_path, dir, file)
+        if os.path.isdir(series_path) == False: continue 
+        image_name = dir+'.jpeg'
+        if os.path.isfile(os.path.join(image_path, image_name)) == True: continue
         
-        slices = [pydicom.read_file(s) for s in lstFilesDCM]
+        try:
+            lstFilesDCM = []
+            for root, dirs, files in os.walk(series_path):
+                for file in files:
+                    lstFilesDCM.append(os.path.join(root, file))
+            slices = [pydicom.read_file(s) for s in lstFilesDCM]
+            # filter PA/AP, SeriesDescription
+            # the front view and lateral view can be chosen by model with MIMIC-CXRv2.0 dataset 
+            si, ss = 0, slices[0]
+            for i, s in enumerate(slices):
+                if 'PA' in s.SeriesDescription or 'AP' in s.SeriesDescription:
+                    si, ss = i, slices[i]
 
-        # filter PA/AP, SeriesDescription
-        # the front view and lateral view can be chosen by model with MIMIC-CXRv2.0 dataset 
-        si, ss = 0, slices[0]
-        for i, s in enumerate(slices):
-            if 'PA' in s.SeriesDescription or 'AP' in s.SeriesDescription:
-                si, ss = i, slices[i]
+            sitk_image = sitk.ReadImage(lstFilesDCM[si])
+            img = sitk.GetArrayFromImage(sitk_image)
+            img = np.squeeze(img, axis=0)
 
-        sitk_image = sitk.ReadImage(lstFilesDCM[si])
+            img = (img-np.min(img))/(np.max(img)-np.min(img)) * 255
+            img = Image.fromarray(img.astype('uint8')).convert('RGB')#numpy to PIL
 
-        img = sitk.GetArrayFromImage(sitk_image)
-        img = np.squeeze(img, axis=0)
+            #ss.PhotometricInterpretation: 'MONOCHROME1'=flip and 'MONOCHROME2'=normal
+            if 'MONOCHROME1' in ss.PhotometricInterpretation:
+                img = PIL.ImageOps.invert(img) #flip the white and black, RGB
 
-        img = (img-np.min(img))/(np.max(img)-np.min(img)) * 255
-        img = Image.fromarray(img.astype('uint8')).convert('RGB')#numpy to PIL
+            #store
+            img.save(os.path.join(image_path, image_name),"JPEG", quality=95, optimize=True, progressive=True)
+        except Exception as e:
+                print("Unable to read file. %s" % e)
+                continue
 
-        #ss.PhotometricInterpretation: 'MONOCHROME1'=flip and 'MONOCHROME2'=normal
-        if 'MONOCHROME1' in ss.PhotometricInterpretation:
-            img = PIL.ImageOps.invert(img) #flip the white and black, RGB
+        images.append(image_name)
+        labels_new.append(labels[idx])
+        sys.stdout.write('\r Image ID {} and path {}'.format((idx+1), series_path))
+        sys.stdout.flush()
 
-        return img, ss
-        
+    image_name = pd.DataFrame(images, columns=['name'])
+    image_label = pd.DataFrame(labels_new, columns=['label'])
+    cxr = pd.concat([image_name, image_label],axis=1)
+    print("\r dataset shape: {}".format(cxr.shape)) 
+    print("\r Num of disease: {}".format(cxr['label'].value_counts()) )
+    cxr.to_csv('/data/fjsdata/CVTEDR/CXR20201210.csv', index=False, header=True, sep=',')
+
 if __name__ == "__main__":
 
     #CVTEDR_Filter()
-    #splitCVTEDR('/data/fjsdata/CVTEDR/CXR20201204.csv')
-    getDicomImage('/data/fjsdata/CVTEDR/images')
-
+    getDicomImage('/data/fjsdata/CVTEDR/dicoms', '/data/fjsdata/CVTEDR/CXR20201204.csv')
+    #splitCVTEDR('/data/fjsdata/CVTEDR/CXR20201209.csv')
+    """
     #for debug   
     data_loader_train = get_train_dataloader(batch_size=512, shuffle=True, num_workers=0)
     roi_idx = np.array([0,0,0, 1,1,1, 3,3,3, 511,510,511])
     for batch_idx, (image, label) in enumerate(data_loader_train):
          roi_label = label[roi_idx]
          print(roi_label)
+    """
     
     
     

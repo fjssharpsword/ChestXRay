@@ -31,7 +31,7 @@ parser.add_argument('--model', type=str, default='CVTEDRNet', help='CVTEDRNet')
 args = parser.parse_args()
 
 #config
-os.environ['CUDA_VISIBLE_DEVICES'] = "6" #"0,1,2,3,4,5,6,7"
+os.environ['CUDA_VISIBLE_DEVICES'] = "7" #"0,1,2,3,4,5,6,7"
 CLASS_NAMES = ['Atelectasis', 'Cardiomegaly', 'Effusion', 'Infiltration', 'Mass', 'Nodule', 'Pneumonia', 
                'Pneumothorax', 'Consolidation', 'Edema', 'Emphysema', 'Fibrosis', 'Pleural_Thickening', 'Hernia']
 N_CLASSES = len(CLASS_NAMES)
@@ -48,14 +48,14 @@ def Train():
     print('********************load model********************')
     # initialize and load the model
     if args.model == 'CVTEDRNet':
-        model_img = CXRClassifier(num_classes=N_CLASSES, is_pre_trained=True, is_roi=False).cuda()#initialize model 
+        model_img = CXRClassifier(num_classes=N_CLASSES, is_pre_trained=True).cuda()#initialize model 
         #model_img = nn.DataParallel(model_img).cuda()  # make model available multi GPU cores training
         optimizer_img = optim.Adam(model_img.parameters(), lr=1e-3, betas=(0.9, 0.999), eps=1e-08, weight_decay=1e-5)
         lr_scheduler_img = lr_scheduler.StepLR(optimizer_img, step_size = 10, gamma = 1)
 
         roigen = ROIGenerator()
 
-        model_roi = CXRClassifier(num_classes=N_CLASSES, is_pre_trained=True, is_roi=True).cuda()
+        model_roi = CXRClassifier(num_classes=N_CLASSES, is_pre_trained=True).cuda()
         #model_roi = nn.DataParallel(model_roi).cuda()
         optimizer_roi = optim.Adam(model_roi.parameters(), lr=1e-3, betas=(0.9, 0.999), eps=1e-08, weight_decay=1e-5)
         lr_scheduler_roi = lr_scheduler.StepLR(optimizer_roi, step_size = 10, gamma = 1)
@@ -126,9 +126,7 @@ def Train():
         model_fusion.eval()
         val_loss = []
         gt = torch.FloatTensor().cuda()
-        pred_img = torch.FloatTensor().cuda()
-        pred_roi = torch.FloatTensor().cuda()
-        pred_fusion = torch.FloatTensor().cuda()
+        pred = torch.FloatTensor().cuda()
         with torch.autograd.no_grad():
             for batch_idx, (image, label) in enumerate(dataloader_val):
                 gt = torch.cat((gt, label.cuda()), 0)
@@ -137,7 +135,6 @@ def Train():
                 var_label = torch.autograd.Variable(label).cuda()
                 conv_fea_img, fc_fea_img, out_img = model_img(var_image)#forward
                 loss_img = bce_criterion(out_img, var_label) 
-                pred_img = torch.cat((pred_img, out_img.data), 0)
                 #ROI-level
                 cls_weights = list(model_img.parameters())
                 weight_softmax = np.squeeze(cls_weights[-5].data.cpu().numpy())
@@ -145,13 +142,12 @@ def Train():
                 var_roi = torch.autograd.Variable(roi).cuda()
                 _, fc_fea_roi, out_roi = model_roi(var_roi)
                 loss_roi = bce_criterion(out_roi, var_label) 
-                pred_roi = torch.cat((pred_roi, out_roi.data), 0)
                 #Fusion
                 fc_fea_fusion = torch.cat((fc_fea_img,fc_fea_roi), 1)
                 var_fusion = torch.autograd.Variable(fc_fea_fusion).cuda()
                 out_fusion = model_fusion(var_fusion)
                 loss_fusion = bce_criterion(out_fusion, var_label) 
-                pred_fusion = torch.cat((pred_fusion, out_fusion.data), 0)
+                pred = torch.cat((pred, out_fusion.data), 0)
                 #loss
                 loss_tensor = 0.7*loss_img + 0.2*loss_roi + 0.1*loss_fusion
                 val_loss.append(loss_tensor.item())
@@ -160,14 +156,12 @@ def Train():
                                 float('%0.6f'%loss_fusion.item()), float('%0.6f'%loss_tensor.item()) ))
                 sys.stdout.flush()
         #evaluation       
-        AUROCs_img = np.array(compute_AUCs(gt, pred_img, N_CLASSES)).mean()
-        AUROCs_roi = np.array(compute_AUCs(gt, pred_roi, N_CLASSES)).mean()
-        AUROCs_fusion = np.array(compute_AUCs(gt, pred_fusion, N_CLASSES)).mean()
-        print("\r Eopch: %5d validation loss = %.6f, Validataion AUROC image=%.4f roi=%.4f fusion=%.4f" 
-              % (epoch + 1, np.mean(val_loss), AUROCs_img, AUROCs_roi, AUROCs_fusion)) 
+        AUROCs = compute_AUCs(gt, pred, N_CLASSES)
+        AUROC_avg = np.array(AUROCs).mean()
+        print("\r Eopch: %5d validation loss = %.6f, Validataion AUROC = %.4f" % (epoch + 1, np.mean(val_loss), AUROC_avg)) 
         #save checkpoint
-        if AUROC_best < AUROCs_fusion:
-            AUROC_best = AUROCs_fusion
+        if AUROC_best < AUROC_avg:
+            AUROC_best = AUROC_avg
             #torch.save(model.module.state_dict(), CKPT_PATH)
             torch.save(model_img.state_dict(), './Pre-trained/'+ args.model +'/img_model.pkl') #Saving torch.nn.DataParallel Models
             torch.save(model_roi.state_dict(), './Pre-trained/'+ args.model +'/roi_model.pkl')
@@ -177,7 +171,7 @@ def Train():
         time_elapsed = time.time() - since
         print('Training epoch: {} completed in {:.0f}m {:.0f}s'.format(epoch+1, time_elapsed // 60 , time_elapsed % 60))
 
-def Test():
+def Test(CKPT_PATH = ''):
     print('********************load data********************')
     dataloader_test = get_test_dataloader(batch_size=BATCH_SIZE, shuffle=False, num_workers=8)
     print('********************load data succeed!********************')
@@ -185,80 +179,41 @@ def Test():
     print('********************load model********************')
     # initialize and load the model
     if args.model == 'CVTEDRNet':
-        model_img = CXRClassifier(num_classes=N_CLASSES, is_pre_trained=True, is_roi=False).cuda()
-        CKPT_PATH = './Pre-trained/'+ args.model +'/img_model.pkl')
-        checkpoint = torch.load(CKPT_PATH)
-        model_img.load_state_dict(checkpoint) #strict=False
-        print("=> loaded Image model checkpoint: "+CKPT_PATH)
-
-        model_roi = CXRClassifier(num_classes=N_CLASSES, is_pre_trained=True, is_roi=True).cuda()
-        CKPT_PATH = './Pre-trained/'+ args.model +'/roi_model.pkl')
-        checkpoint = torch.load(CKPT_PATH)
-        model_roi.load_state_dict(checkpoint) #strict=False
-        print("=> loaded ROI model checkpoint: "+CKPT_PATH)
-
-        model_fusion = FusionClassifier(input_size=2048, output_size=N_CLASSES).cuda()
-        CKPT_PATH = './Pre-trained/'+ args.model +'/fusion_model.pkl')
-        checkpoint = torch.load(CKPT_PATH)
-        model_fusion.load_state_dict(checkpoint) #strict=False
-        print("=> loaded Fusion model checkpoint: "+CKPT_PATH)
-
+        model = CVTEDRNet(num_classes=N_CLASSES, is_pre_trained=True).cuda()#initialize model 
     else: 
         print('No required model')
         return #over
+
+    #model = nn.DataParallel(model).cuda()  # make model available multi GPU cores training
     torch.backends.cudnn.benchmark = True  # improve train speed slightly
+    if os.path.isfile(CKPT_PATH):
+        checkpoint = torch.load(CKPT_PATH)
+        model.load_state_dict(checkpoint) #strict=False
+        print("=> loaded model checkpoint: "+CKPT_PATH)
     print('******************** load model succeed!********************')
 
     print('******* begin testing!*********')
+    # initialize the ground truth and output tensor
     gt = torch.FloatTensor().cuda()
-    pred_img = torch.FloatTensor().cuda()
-    pred_roi = torch.FloatTensor().cuda()
-    pred_fusion = torch.FloatTensor().cuda()
+    pred = torch.FloatTensor().cuda()
     # switch to evaluate mode
-    model_img.eval() #turn to test mode
-    model_roi.eval()
-    model_fusion.eval()
+    model.eval()
     cudnn.benchmark = True
     with torch.autograd.no_grad():
         for batch_idx, (image, label) in enumerate(dataloader_test):
-            gt = torch.cat((gt, label.cuda()), 0)
-            #image-level
+            label = label.cuda()
+            gt = torch.cat((gt, label), 0)
             var_image = torch.autograd.Variable(image).cuda()
             var_label = torch.autograd.Variable(label).cuda()
-            conv_fea_img, fc_fea_img, out_img = model_img(var_image)#forward
-            pred_img = torch.cat((pred_img, out_img.data), 0)
-            #ROI-level
-            cls_weights = list(model_img.parameters())
-            weight_softmax = np.squeeze(cls_weights[-5].data.cpu().numpy())
-            roi = roigen.ROIGeneration(image, conv_fea_img, weight_softmax, label.numpy())
-            var_roi = torch.autograd.Variable(roi).cuda()
-            _, fc_fea_roi, out_roi = model_roi(var_roi)
-            pred_roi = torch.cat((pred_roi, out_roi.data), 0)
-            #Fusion
-            fc_fea_fusion = torch.cat((fc_fea_img,fc_fea_roi), 1)
-            var_fusion = torch.autograd.Variable(fc_fea_fusion).cuda()
-            out_fusion = model_fusion(var_fusion)
-            pred_fusion = torch.cat((pred_fusion, out_fusion.data), 0)
+            var_output = model(var_image)#forward
+            pred = torch.cat((pred, var_output.data), 0)
             sys.stdout.write('\r testing process: = {}'.format(batch_idx+1))
             sys.stdout.flush()
-
-    #for evaluation
-    AUROC_img = compute_AUCs(gt, pred_img, N_CLASSES)
-    AUROC_avg = np.array(AUROC_img).mean()
+            
+    AUROCs = compute_AUCs(gt, pred, N_CLASSES)
+    AUROC_avg = np.array(AUROCs).mean()
     for i in range(N_CLASSES):
-        print('The AUROC of {} is {:.4f}'.format(CLASS_NAMES[i], AUROC_img[i]))
-    print('The average AUROC is {:.4f}'.format(AUROC_avg))
-
-    AUROC_roi = compute_AUCs(gt, pred_roi, N_CLASSES)
-    AUROC_avg = np.array(AUROC_img).mean()
-    for i in range(N_CLASSES):
-        print('The AUROC of {} is {:.4f}'.format(CLASS_NAMES[i], AUROC_img[i]))
-    print('The average AUROC is {:.4f}'.format(AUROC_avg))
-
-    AUROC_fusion = compute_AUCs(gt, pred_fusion, N_CLASSES)
-    AUROC_avg = np.array(AUROC_img).mean()
-    for i in range(N_CLASSES):
-        print('The AUROC of {} is {:.4f}'.format(CLASS_NAMES[i], AUROC_img[i]))
+        print('The AUROC of {} is {:.4f}'.format(CLASS_NAMES[i], AUROCs[i]))
     print('The average AUROC is {:.4f}'.format(AUROC_avg))
 
     #Evaluating the threshold of prediction
@@ -319,8 +274,8 @@ def BoxTest(CKPT_PATH, thresholds):
 
 def main():
     CKPT_PATH = Train() #for training
-    
-    #thresholds = Test() #for test
+    #CKPT_PATH ='./Pre-trained/'+ args.model +'/best_model.pkl' #for debug
+    #thresholds = Test(CKPT_PATH) #for test
     #BoxTest(CKPT_PATH, thresholds)
 
 if __name__ == '__main__':
