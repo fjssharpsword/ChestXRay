@@ -34,15 +34,11 @@ class DatasetGenerator(Dataset):
         labels = []
         with open(path_to_dataset_file, "r") as f:
             for line in f: 
-                items = line.split(',') 
-                #sample: image\DX\20190124\DR190124024_1.2.156.600734.2466462228.11372.1548290939.55
-                image_path = items[0].split('\\')[-1]
-                dir_name = image_path.split('_')[0]
-                file_name = image_path.split('_')[1]
-                image_name = os.path.join(path_to_img_dir, dir_name, file_name)
+                items = line.strip().split(',') 
+                image_name = os.path.join(path_to_img_dir, items[0])
                 image_names.append(image_name)
 
-                label = int(items[1])
+                label = int(eval(items[1])) #eval for 
                 labels.append(label)
 
         self.image_names = image_names
@@ -77,7 +73,7 @@ transform_seq = transforms.Compose([
 ])
 
 PATH_TO_IMAGES_DIR = '/data/fjsdata/CVTEDR/images'
-PATH_TO_TRAIN_FILE = '/data/fjsdata/CVTEDR/cxr_train.txtt'
+PATH_TO_TRAIN_FILE = '/data/fjsdata/CVTEDR/cxr_train.txt'
 PATH_TO_VAL_FILE = '/data/fjsdata/CVTEDR/cxr_val.txt'
 PATH_TO_TEST_FILE = '/data/fjsdata/CVTEDR/cxr_test.txt'
 
@@ -135,20 +131,23 @@ def CVTEDR_Filter():
     cxr.to_csv('/data/fjsdata/CVTEDR/CXR20201204.csv', index=False, header=True, sep=',')
 
 def splitCVTEDR(dataset_path):
-
+    
     datas = pd.read_csv(dataset_path, sep=',')
-    datas = datas.drop(datas[datas['阳性标识']==3.0].index)
-    images = datas[['图片路径']]
-    labels = datas[['阳性标识']]
+    #datas = datas.drop(datas[datas['label']==3.0].index)
+    datas['label'] = datas['label'].apply(lambda x: 1.0 if x==3.0 else x)
+    print("\r dataset shape: {}".format(datas.shape)) 
+    print("\r dataset distribution: {}".format(datas['label'].value_counts()))
+    images = datas[['name']]
+    labels = datas[['label']]
     #print("\r CXR Columns: {}".format(datas.columns))
     X_train, X_test, y_train, y_test = train_test_split(images, labels, test_size=0.20, random_state=11)
     X_train, X_val, y_train, y_val = train_test_split(X_train, y_train, test_size=0.10, random_state=22)
     print("\r trainset shape: {}".format(y_train.shape)) 
-    print("\r trainset distribution: {}".format(y_train['阳性标识'].value_counts()))
+    print("\r trainset distribution: {}".format(y_train['label'].value_counts()))
     print("\r valset shape: {}".format(y_val.shape)) 
-    print("\r trainset distribution: {}".format(y_val['阳性标识'].value_counts()))
+    print("\r trainset distribution: {}".format(y_val['label'].value_counts()))
     print("\r testset shape: {}".format(y_test.shape)) 
-    print("\r trainset distribution: {}".format(y_test['阳性标识'].value_counts()))
+    print("\r trainset distribution: {}".format(y_test['label'].value_counts()))
     trainset = pd.concat([X_train, y_train], axis=1).to_csv('/data/fjsdata/CVTEDR/cxr_train.txt', index=False, header=False, sep=',')
     valset = pd.concat([X_val, y_val], axis=1).to_csv('/data/fjsdata/CVTEDR/cxr_val.txt', index=False, header=False, sep=',')
     testset = pd.concat([X_test, y_test], axis=1).to_csv('/data/fjsdata/CVTEDR/cxr_test.txt', index=False, header=False, sep=',')
@@ -171,6 +170,8 @@ def getDicomImage(dicom_path, dataset_path):
         series_path = os.path.join(dicom_path, dir, file)
         if os.path.isdir(series_path) == False: continue 
         image_name = dir+'.jpeg'
+        images.append(image_name)
+        labels_new.append(labels[idx])
         if os.path.isfile(os.path.join(image_path, image_name)) == True: continue
         
         try:
@@ -203,8 +204,6 @@ def getDicomImage(dicom_path, dataset_path):
                 print("Unable to read file. %s" % e)
                 continue
 
-        images.append(image_name)
-        labels_new.append(labels[idx])
         sys.stdout.write('\r Image ID {} and path {}'.format((idx+1), series_path))
         sys.stdout.flush()
 
@@ -215,19 +214,29 @@ def getDicomImage(dicom_path, dataset_path):
     print("\r Num of disease: {}".format(cxr['label'].value_counts()) )
     cxr.to_csv('/data/fjsdata/CVTEDR/CXR20201210.csv', index=False, header=True, sep=',')
 
+def verfiyImage(dataset_path, image_path):
+    datas = pd.read_csv(dataset_path, sep=',')
+    names = np.array(datas['name']).tolist()
+    labels =np.array(datas['label']).tolist()
+    print('image number:{}'.format(len(names)))
+    for name in names:
+        if os.path.isfile(os.path.join(image_path, name)) == False: 
+            print(name) #DR170210009.jpeg  deleted
+
+
 if __name__ == "__main__":
 
     #CVTEDR_Filter()
-    getDicomImage('/data/fjsdata/CVTEDR/dicoms', '/data/fjsdata/CVTEDR/CXR20201204.csv')
-    #splitCVTEDR('/data/fjsdata/CVTEDR/CXR20201209.csv')
-    """
+    #getDicomImage('/data/fjsdata/CVTEDR/dicoms', '/data/fjsdata/CVTEDR/CXR20201204.csv')
+    #verfiyImage('/data/fjsdata/CVTEDR/CXR20201210.csv', '/data/fjsdata/CVTEDR/images')
+    #splitCVTEDR('/data/fjsdata/CVTEDR/CXR20201210.csv')
+    
     #for debug   
-    data_loader_train = get_train_dataloader(batch_size=512, shuffle=True, num_workers=0)
-    roi_idx = np.array([0,0,0, 1,1,1, 3,3,3, 511,510,511])
+    data_loader_train = get_train_dataloader(batch_size=16, shuffle=True, num_workers=0)
     for batch_idx, (image, label) in enumerate(data_loader_train):
-         roi_label = label[roi_idx]
-         print(roi_label)
-    """
+         print(image.shape)
+         print(label.shape)
+    
     
     
     
