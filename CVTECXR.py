@@ -236,6 +236,7 @@ if __name__ == "__main__":
     for batch_idx, (image, label) in enumerate(data_loader_train):
          print(image.shape)
          print(label.shape)
+         break
     
     
     

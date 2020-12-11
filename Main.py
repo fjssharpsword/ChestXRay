@@ -23,11 +23,11 @@ from skimage.measure import label
 from ChestXRay8 import get_train_dataloader, get_validation_dataloader, get_test_dataloader, get_bbox_dataloader, get_train_dataloader_full
 from Utils.Evaluation import compute_AUCs, compute_ROCCurve, compute_IoUs
 from Utils.CAM import CAM
-from Models.CVTEDRNet import CXRClassifier, ROIGenerator, FusionClassifier
+from Models.SRPNet import CXRClassifier, ROIGenerator, FusionClassifier
 
 #command parameters
 parser = argparse.ArgumentParser(description='For ChestXRay')
-parser.add_argument('--model', type=str, default='CVTEDRNet', help='CVTEDRNet')
+parser.add_argument('--model', type=str, default='SRPNet', help='SRPNet')
 args = parser.parse_args()
 
 #config
@@ -47,7 +47,7 @@ def Train():
 
     print('********************load model********************')
     # initialize and load the model
-    if args.model == 'CVTEDRNet':
+    if args.model == 'SRPNet':
         model_img = CXRClassifier(num_classes=N_CLASSES, is_pre_trained=True, is_roi=False).cuda()#initialize model 
         #model_img = nn.DataParallel(model_img).cuda()  # make model available multi GPU cores training
         optimizer_img = optim.Adam(model_img.parameters(), lr=1e-3, betas=(0.9, 0.999), eps=1e-08, weight_decay=1e-5)
@@ -184,7 +184,7 @@ def Test():
 
     print('********************load model********************')
     # initialize and load the model
-    if args.model == 'CVTEDRNet':
+    if args.model == 'SRPNet':
         model_img = CXRClassifier(num_classes=N_CLASSES, is_pre_trained=True, is_roi=False).cuda()
         CKPT_PATH = './Pre-trained/'+ args.model +'/img_model.pkl'
         checkpoint = torch.load(CKPT_PATH)
@@ -265,16 +265,16 @@ def Test():
 
     #Evaluating the threshold of prediction
     thresholds = compute_ROCCurve(gt, pred_fusion, CLASS_NAMES)
-    return thresholds
+    print(thresholds)
 
-def BoxTest(thresholds):
+def BoxTest():
     print('********************load data********************')
     dataloader_bbox = get_bbox_dataloader(batch_size=1, shuffle=False, num_workers=0)
     print('********************load data succeed!********************')
 
     print('********************load model********************')
     # initialize and load the model
-    if args.model == 'CVTEDRNet':
+    if args.model == 'SRPNet':
         model_img = CXRClassifier(num_classes=N_CLASSES, is_pre_trained=True, is_roi=False).cuda()
         CKPT_PATH = './Pre-trained/'+ args.model +'/img_model.pkl'
         checkpoint = torch.load(CKPT_PATH)
@@ -319,8 +319,8 @@ def BoxTest(thresholds):
 
 def main():
     #CKPT_PATH = Train() #for training
-    thresholds = Test() #for test
-    BoxTest(thresholds)
+    Test() #for test
+    BoxTest()
 
 if __name__ == '__main__':
     main()
