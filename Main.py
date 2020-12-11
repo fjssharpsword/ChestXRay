@@ -186,22 +186,24 @@ def Test():
     # initialize and load the model
     if args.model == 'CVTEDRNet':
         model_img = CXRClassifier(num_classes=N_CLASSES, is_pre_trained=True, is_roi=False).cuda()
-        CKPT_PATH = './Pre-trained/'+ args.model +'/img_model.pkl')
+        CKPT_PATH = './Pre-trained/'+ args.model +'/img_model.pkl'
         checkpoint = torch.load(CKPT_PATH)
         model_img.load_state_dict(checkpoint) #strict=False
         print("=> loaded Image model checkpoint: "+CKPT_PATH)
 
         model_roi = CXRClassifier(num_classes=N_CLASSES, is_pre_trained=True, is_roi=True).cuda()
-        CKPT_PATH = './Pre-trained/'+ args.model +'/roi_model.pkl')
+        CKPT_PATH = './Pre-trained/'+ args.model +'/roi_model.pkl'
         checkpoint = torch.load(CKPT_PATH)
         model_roi.load_state_dict(checkpoint) #strict=False
         print("=> loaded ROI model checkpoint: "+CKPT_PATH)
 
         model_fusion = FusionClassifier(input_size=2048, output_size=N_CLASSES).cuda()
-        CKPT_PATH = './Pre-trained/'+ args.model +'/fusion_model.pkl')
+        CKPT_PATH = './Pre-trained/'+ args.model +'/fusion_model.pkl'
         checkpoint = torch.load(CKPT_PATH)
         model_fusion.load_state_dict(checkpoint) #strict=False
         print("=> loaded Fusion model checkpoint: "+CKPT_PATH)
+
+        roigen = ROIGenerator() #region generator
 
     else: 
         print('No required model')
@@ -250,22 +252,22 @@ def Test():
     print('The average AUROC is {:.4f}'.format(AUROC_avg))
 
     AUROC_roi = compute_AUCs(gt, pred_roi, N_CLASSES)
-    AUROC_avg = np.array(AUROC_img).mean()
+    AUROC_avg = np.array(AUROC_roi).mean()
     for i in range(N_CLASSES):
-        print('The AUROC of {} is {:.4f}'.format(CLASS_NAMES[i], AUROC_img[i]))
+        print('The AUROC of {} is {:.4f}'.format(CLASS_NAMES[i], AUROC_roi[i]))
     print('The average AUROC is {:.4f}'.format(AUROC_avg))
 
     AUROC_fusion = compute_AUCs(gt, pred_fusion, N_CLASSES)
-    AUROC_avg = np.array(AUROC_img).mean()
+    AUROC_avg = np.array(AUROC_fusion).mean()
     for i in range(N_CLASSES):
-        print('The AUROC of {} is {:.4f}'.format(CLASS_NAMES[i], AUROC_img[i]))
+        print('The AUROC of {} is {:.4f}'.format(CLASS_NAMES[i], AUROC_fusion[i]))
     print('The average AUROC is {:.4f}'.format(AUROC_avg))
 
     #Evaluating the threshold of prediction
-    thresholds = compute_ROCCurve(gt, pred, CLASS_NAMES)
+    thresholds = compute_ROCCurve(gt, pred_fusion, CLASS_NAMES)
     return thresholds
 
-def BoxTest(CKPT_PATH, thresholds):
+def BoxTest(thresholds):
     print('********************load data********************')
     dataloader_bbox = get_bbox_dataloader(batch_size=1, shuffle=False, num_workers=0)
     print('********************load data succeed!********************')
@@ -273,41 +275,39 @@ def BoxTest(CKPT_PATH, thresholds):
     print('********************load model********************')
     # initialize and load the model
     if args.model == 'CVTEDRNet':
-        model = CVTEDRNet(num_classes=N_CLASSES, is_pre_trained=True).cuda()#initialize model 
+        model_img = CXRClassifier(num_classes=N_CLASSES, is_pre_trained=True, is_roi=False).cuda()
+        CKPT_PATH = './Pre-trained/'+ args.model +'/img_model.pkl'
+        checkpoint = torch.load(CKPT_PATH)
+        model_img.load_state_dict(checkpoint) #strict=False
+        print("=> loaded Image model checkpoint: "+CKPT_PATH)
     else: 
         print('No required model')
         return #over
 
-    #model = nn.DataParallel(model).cuda()  # make model available multi GPU cores training
     torch.backends.cudnn.benchmark = True  # improve train speed slightly
-    if os.path.isfile(CKPT_PATH):
-        checkpoint = torch.load(CKPT_PATH)
-        model.load_state_dict(checkpoint) #strict=False
-        print("=> loaded model checkpoint: "+CKPT_PATH)
     print('******************** load model succeed!********************')
 
     print('******* begin bounding box testing!*********')
     #np.set_printoptions(suppress=True) #to float
     #for name, layer in model.named_modules():
     #    print(name, layer)
-    cls_weights = list(model.parameters())
+    cls_weights = list(model_img.parameters())
     weight_softmax = np.squeeze(cls_weights[-5].data.cpu().numpy())
     cam = CAM(256, 224)
     IoUs =[]
     with torch.autograd.no_grad():
         for batch_idx, (_, gtbox, image, label) in enumerate(dataloader_bbox):
             var_image = torch.autograd.Variable(image).cuda()
+            conv_fea_img, fc_fea_img, out_img = model_img(var_image) #get feature maps
             """
-            var_output = model(var_image)#forward
-            logit = var_output.cpu().data.numpy().squeeze() #predict
+            logit = out_img.cpu().data.numpy().squeeze() #predict
             idxs = []
             for i in range(N_CLASSES):
                 if logit[i] > thresholds[i]: #diffrent diseases vary in threshold
                     idxs.append(i)
             """
-            var_feature = model.dense_net_121.features(var_image) #get feature maps
             idx = torch.where(label[0]==1)[0] #true label
-            cam_img = cam.returnCAM(var_feature.cpu().data.numpy(), weight_softmax, idx)
+            cam_img = cam.returnCAM(conv_fea_img.cpu().data.numpy(), weight_softmax, idx)
             pdbox = cam.returnBox(cam_img, gtbox[0].numpy())
             iou = compute_IoUs(pdbox, gtbox[0].numpy())
             IoUs.append(iou) #compute IoU
@@ -318,10 +318,9 @@ def BoxTest(CKPT_PATH, thresholds):
     print('The average IoU is {:.4f}'.format(np.array(IoUs).mean()))
 
 def main():
-    CKPT_PATH = Train() #for training
-    
-    #thresholds = Test() #for test
-    #BoxTest(CKPT_PATH, thresholds)
+    #CKPT_PATH = Train() #for training
+    thresholds = Test() #for test
+    BoxTest(thresholds)
 
 if __name__ == '__main__':
     main()
