@@ -20,6 +20,7 @@ import torchvision
 from skimage.measure import label
  
 #self-defined
+#from ChestXRay8BM import get_test_dataloader, get_train_val_dataloader
 from ChestXRay8 import get_train_dataloader, get_validation_dataloader, get_test_dataloader, get_bbox_dataloader, get_train_dataloader_full
 from Utils.Evaluation import compute_AUCs, compute_ROCCurve, compute_IoUs
 from Utils.CAM import CAM
@@ -31,11 +32,11 @@ parser.add_argument('--model', type=str, default='SRPNet', help='SRPNet')
 args = parser.parse_args()
 
 #config
-os.environ['CUDA_VISIBLE_DEVICES'] = "6" #"0,1,2,3,4,5,6,7"
+os.environ['CUDA_VISIBLE_DEVICES'] = "7" #"0,1,2,3,4,5,6,7"
 CLASS_NAMES = ['Atelectasis', 'Cardiomegaly', 'Effusion', 'Infiltration', 'Mass', 'Nodule', 'Pneumonia', 
                'Pneumothorax', 'Consolidation', 'Edema', 'Emphysema', 'Fibrosis', 'Pleural_Thickening', 'Hernia']
 N_CLASSES = len(CLASS_NAMES)
-MAX_EPOCHS = 20
+MAX_EPOCHS = 10
 BATCH_SIZE = 32 #256 + 256
 
 def Train():
@@ -297,6 +298,7 @@ def BoxTest():
     IoUs =[]
     with torch.autograd.no_grad():
         for batch_idx, (_, gtbox, image, label) in enumerate(dataloader_bbox):
+            #if batch_idx != 963: continue
             var_image = torch.autograd.Variable(image).cuda()
             conv_fea_img, fc_fea_img, out_img = model_img(var_image) #get feature maps
             """
@@ -318,8 +320,8 @@ def BoxTest():
     print('The average IoU is {:.4f}'.format(np.array(IoUs).mean()))
 
 def main():
-    #CKPT_PATH = Train() #for training
-    Test() #for test
+    #Train() #for training
+    #Test() #for test
     BoxTest()
 
 if __name__ == '__main__':

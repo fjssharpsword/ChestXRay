@@ -43,6 +43,24 @@ class DatasetGenerator(Dataset):
         self.labels = labels
         self.transform = transform
 
+        """
+        #statistics of dataset
+        labels_np = np.array(labels)
+        multi_dis_num = 0
+        for i in range(len(CLASS_NAMES)):
+            num = len(np.where(labels_np[:,i]==1)[0])
+            multi_dis_num = multi_dis_num + num
+            print('Number of {} is {}'.format(CLASS_NAMES[i], num))
+        print('Number of Multi Finding is {}'.format(multi_dis_num))
+
+        norm_num = (np.sum(labels_np, axis=1)==0).sum()
+        dis_num = (np.sum(labels_np, axis=1)!=0).sum()
+        assert norm_num + dis_num==len(labels)
+        print('Number of No Finding is {}'.format(norm_num))
+        print('Number of Finding is {}'.format(dis_num))
+        print('Total number is {}'.format(len(labels)))
+        """
+
     def __getitem__(self, index):
         """
         Args:
@@ -115,10 +133,15 @@ class BBoxGenerator(Dataset):
         return len(self.image_names)
 
 #config 
-transform_seq = transforms.Compose([
+transform_seq_test = transforms.Compose([
    transforms.Resize((256,256)),
-   #transforms.RandomCrop(224),
    transforms.CenterCrop(224),
+   transforms.ToTensor(),
+   transforms.Normalize(mean=[0.485, 0.456, 0.406],std=[0.229, 0.224, 0.225]),
+])
+transform_seq_train = transforms.Compose([
+   transforms.Resize((256,256)),
+   transforms.RandomCrop(224),
    transforms.ToTensor(),
    transforms.Normalize(mean=[0.485, 0.456, 0.406],std=[0.229, 0.224, 0.225]),
 ])
@@ -139,7 +162,7 @@ CLASS_NAMES = ['Atelectasis', 'Cardiomegaly', 'Effusion', 'Infiltration', 'Mass'
 
 def get_train_dataloader(batch_size, shuffle, num_workers):
     dataset_train = DatasetGenerator(path_to_img_dir=PATH_TO_IMAGES_DIR,
-                                     path_to_dataset_file=[PATH_TO_TRAIN_FILE], transform=transform_seq)
+                                     path_to_dataset_file=[PATH_TO_TRAIN_FILE], transform=transform_seq_train)
     #sampler_train = torch.utils.data.distributed.DistributedSampler(dataset_train) #for multi cpu and multi gpu
     #data_loader_train = DataLoader(dataset=dataset_train, batch_size=batch_size, sampler = sampler_train, 
                                    #shuffle=shuffle, num_workers=num_workers, pin_memory=True)
@@ -149,7 +172,7 @@ def get_train_dataloader(batch_size, shuffle, num_workers):
 
 def get_validation_dataloader(batch_size, shuffle, num_workers):
     dataset_validation = DatasetGenerator(path_to_img_dir=PATH_TO_IMAGES_DIR,
-                                          path_to_dataset_file=[PATH_TO_VAL_FILE], transform=transform_seq)
+                                          path_to_dataset_file=[PATH_TO_VAL_FILE], transform=transform_seq_test)
     data_loader_validation = DataLoader(dataset=dataset_validation, batch_size=batch_size,
                                    shuffle=shuffle, num_workers=num_workers, pin_memory=True)
     return data_loader_validation
@@ -157,14 +180,14 @@ def get_validation_dataloader(batch_size, shuffle, num_workers):
 
 def get_test_dataloader(batch_size, shuffle, num_workers):
     dataset_test = DatasetGenerator(path_to_img_dir=PATH_TO_IMAGES_DIR,
-                                    path_to_dataset_file=[PATH_TO_TEST_FILE], transform=transform_seq)
+                                    path_to_dataset_file=[PATH_TO_TEST_FILE], transform=transform_seq_test)
     data_loader_test = DataLoader(dataset=dataset_test, batch_size=batch_size,
                                    shuffle=shuffle, num_workers=num_workers, pin_memory=True)
     return data_loader_test
 
 def get_bbox_dataloader(batch_size, shuffle, num_workers):
     dataset_bbox = BBoxGenerator(path_to_img_dir=PATH_TO_IMAGES_DIR, 
-                                 path_to_dataset_file=PATH_TO_BOX_FILE, transform=transform_seq)
+                                 path_to_dataset_file=PATH_TO_BOX_FILE, transform=transform_seq_test)
     data_loader_bbox = DataLoader(dataset=dataset_bbox, batch_size=batch_size,
                                    shuffle=shuffle, num_workers=num_workers, pin_memory=True)
     return data_loader_bbox
@@ -172,7 +195,7 @@ def get_bbox_dataloader(batch_size, shuffle, num_workers):
 #for cross-validation
 def get_train_dataloader_full(batch_size, shuffle, num_workers, split_ratio=0.1):
     dataset_train_full = DatasetGenerator(path_to_img_dir=PATH_TO_IMAGES_DIR,
-                                         path_to_dataset_file=[PATH_TO_TRAIN_FILE, PATH_TO_VAL_FILE], transform=transform_seq)
+                                         path_to_dataset_file=[PATH_TO_TRAIN_FILE, PATH_TO_VAL_FILE], transform=transform_seq_train)
 
     val_size = int(split_ratio * len(dataset_train_full))
     train_size = len(dataset_train_full) - val_size
@@ -186,8 +209,14 @@ def get_train_dataloader_full(batch_size, shuffle, num_workers, split_ratio=0.1)
 
 if __name__ == "__main__":
     #for debug   
-    data_loader_train = get_train_dataloader(batch_size=512, shuffle=True, num_workers=0)
+    data_loader = get_bbox_dataloader(batch_size=1, shuffle=False, num_workers=0)
+    for batch_idx, (image, label) in enumerate(data_loader):
+        print(label.shape)
+        break
+    
+    """
     roi_idx = np.array([0,0,0, 1,1,1, 3,3,3, 511,510,511])
     for batch_idx, (image, label) in enumerate(data_loader_train):
          roi_label = label[roi_idx]
          print(roi_label)
+    """

@@ -6,7 +6,12 @@ import os
 import cv2
 import time
 import numpy as np
+import torch
 import matplotlib.pyplot as plt
+from sklearn.metrics import confusion_matrix
+import torch.nn as nn
+import torchvision
+import torch.nn.functional as F
 
 def compute_ROCCurve(gt, pred, class_names):
     #fpr = 1-Specificity, tpr=Sensitivity
@@ -34,7 +39,8 @@ def compute_ROCCurve(gt, pred, class_names):
     plt.ylabel('Sensitivity')
     plt.grid(b=True, ls=':')
     plt.legend(loc='lower right')
-    plt.title('ChestXRay8')
+    plt.title('Chest X-ray8 dataset with the public splits')
+    #plt.title('Chest X-ray8 dataset with the benchmark splits')
     plt.savefig('./Imgs/ROCCurve.jpg')
 
     return thresholds
@@ -60,3 +66,18 @@ def compute_IoUs(xywh1, xywh2):
     IoUs = intersection / union
     
     return IoUs
+
+def compute_fusion(gt, pred):
+    pred = F.log_softmax(pred, dim=1) 
+    pred = pred.max(1,keepdim=True)[1]
+    pred_np = pred.cpu().numpy()
+    #pred_np = pred.cpu().numpy()[:,1]
+    gt_np = gt.cpu().numpy()[:,1]
+    tn, fp, fn, tp = confusion_matrix(gt_np, pred_np).ravel()
+    return sen, spe
+
+if __name__ == "__main__":
+    #for debug   
+    pred = torch.rand(10, 2)#.to(torch.device('cuda:%d'%7))
+    sen, spe = compute_fusion(gt=0, pred=pred)
+    

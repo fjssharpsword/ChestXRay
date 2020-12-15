@@ -32,6 +32,7 @@ import scipy.ndimage.filters as filters
 from scipy.ndimage import binary_dilation
 import matplotlib.patches as patches
 import matplotlib.pyplot as plt
+from skimage.measure import label as skmlabel
 
 
 class CAM(object):
@@ -67,6 +68,42 @@ class CAM(object):
         IoUs = intersection / union
         
         return IoUs
+
+    def binImage(self, heatmap):
+        _, heatmap_bin = cv2.threshold(heatmap , 0 , 255 , cv2.THRESH_BINARY+cv2.THRESH_OTSU)
+        # t in the paper
+        #_, heatmap_bin = cv2.threshold(heatmap , 178 , 255 , cv2.THRESH_BINARY)
+        return heatmap_bin
+
+    def selectMaxConnect(self, heatmap):
+        labeled_img, num = skmlabel(heatmap, connectivity=2, background=0, return_num=True)    
+        max_label = 0
+        max_num = 0
+        for i in range(1, num+1):
+            if np.sum(labeled_img == i) > max_num:
+                max_num = np.sum(labeled_img == i)
+                max_label = i
+        lcc = (labeled_img == max_label)
+        if max_num == 0:
+            lcc = (labeled_img == -1)
+        lcc = lcc + 0
+        return lcc 
+
+    def returnBox2(self, data, gtbox):
+        w, h = gtbox[2:]
+
+        heatmap_bin = self.binImage(data)
+        heatmap_maxconn = self.selectMaxConnect(heatmap_bin)
+        heatmap_mask = heatmap_bin * heatmap_maxconn
+
+        ind = np.argwhere(heatmap_mask != 0)
+        minh = min(ind[:,0])
+        minw = min(ind[:,1])
+        maxh = max(ind[:,0])
+        maxw = max(ind[:,1])
+
+        return [minh, minw, w, h]
+
 
     def returnBox(self, data, gtbox): #predicted bounding boxes
         # Find local maxima
@@ -134,4 +171,6 @@ class CAM(object):
         ax.add_patch(rect)# Add the patch to the Axes
         ax.axis('off')
         fig.savefig('./Imgs/'+str(batch_idx+1)+'_'+class_name+'.png')
+
+
     

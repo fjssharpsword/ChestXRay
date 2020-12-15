@@ -36,10 +36,15 @@ class DatasetGenerator(Dataset):
             for line in f: 
                 items = line.strip().split(',') 
                 image_name = os.path.join(path_to_img_dir, items[0])
-                image_names.append(image_name)
-
-                label = int(eval(items[1])) #eval for 
-                labels.append(label)
+                if os.path.isfile(image_name) == True:
+                    label = int(eval(items[1])) #eval for 
+                    if label ==0:  #negative
+                        image_names.append(image_name)    
+                        labels.append([1, 0])
+                    elif label == 1: #positive
+                        image_names.append(image_name)    
+                        labels.append([0, 1])
+                    else: continue
 
         self.image_names = image_names
         self.labels = labels
@@ -52,11 +57,16 @@ class DatasetGenerator(Dataset):
         Returns:
             image and its labels
         """
-        image_name = self.image_names[index]
-        image = Image.open(image_name).convert('RGB')
-        label = self.labels[index]
-        if self.transform is not None:
-            image = self.transform(image)
+        try:
+            image_name = self.image_names[index]
+            image = Image.open(image_name).convert('RGB')
+            #image.save('/data/pycode/ChestXRay/Imgs/test.jpeg',"JPEG", quality=95, optimize=True, progressive=True)
+            label = self.labels[index]
+            if self.transform is not None:
+                image = self.transform(image)
+        except Exception as e:
+            print("Unable to read file. %s" % e)
+        
         return image, torch.FloatTensor(label)
 
     def __len__(self):
@@ -64,10 +74,15 @@ class DatasetGenerator(Dataset):
 
 
 #config 
-transform_seq = transforms.Compose([
+transform_seq_train = transforms.Compose([
    transforms.Resize((256,256)),
    transforms.RandomCrop(224),
-   #transforms.CenterCrop(224),
+   transforms.ToTensor(),
+   transforms.Normalize(mean=[0.485, 0.456, 0.406],std=[0.229, 0.224, 0.225]),
+])
+transform_seq_test = transforms.Compose([
+   transforms.Resize((256,256)),
+   transforms.CenterCrop(224),
    transforms.ToTensor(),
    transforms.Normalize(mean=[0.485, 0.456, 0.406],std=[0.229, 0.224, 0.225]),
 ])
@@ -79,17 +94,17 @@ PATH_TO_TEST_FILE = '/data/fjsdata/CVTEDR/cxr_test.txt'
 
 def get_train_dataloader(batch_size, shuffle, num_workers):
     dataset_train = DatasetGenerator(path_to_img_dir=PATH_TO_IMAGES_DIR,
-                                     path_to_dataset_file=PATH_TO_TRAIN_FILE, transform=transform_seq)
+                                     path_to_dataset_file=PATH_TO_TRAIN_FILE, transform=transform_seq_train)
     #sampler_train = torch.utils.data.distributed.DistributedSampler(dataset_train) #for multi cpu and multi gpu
     #data_loader_train = DataLoader(dataset=dataset_train, batch_size=batch_size, sampler = sampler_train, 
                                    #shuffle=shuffle, num_workers=num_workers, pin_memory=True)
     data_loader_train = DataLoader(dataset=dataset_train, batch_size=batch_size,
-                                   shuffle=shuffle, num_workers=num_workers, pin_memory=True)
+                                   shuffle=shuffle, num_workers=num_workers, pin_memory=True)#drop_last=True
     return data_loader_train
 
 def get_validation_dataloader(batch_size, shuffle, num_workers):
     dataset_validation = DatasetGenerator(path_to_img_dir=PATH_TO_IMAGES_DIR,
-                                          path_to_dataset_file=PATH_TO_VAL_FILE, transform=transform_seq)
+                                          path_to_dataset_file=PATH_TO_VAL_FILE, transform=transform_seq_test)
     data_loader_validation = DataLoader(dataset=dataset_validation, batch_size=batch_size,
                                    shuffle=shuffle, num_workers=num_workers, pin_memory=True)
     return data_loader_validation
@@ -97,7 +112,7 @@ def get_validation_dataloader(batch_size, shuffle, num_workers):
 
 def get_test_dataloader(batch_size, shuffle, num_workers):
     dataset_test = DatasetGenerator(path_to_img_dir=PATH_TO_IMAGES_DIR,
-                                    path_to_dataset_file=PATH_TO_TEST_FILE, transform=transform_seq)
+                                    path_to_dataset_file=PATH_TO_TEST_FILE, transform=transform_seq_test)
     data_loader_test = DataLoader(dataset=dataset_test, batch_size=batch_size,
                                    shuffle=shuffle, num_workers=num_workers, pin_memory=True)
     return data_loader_test
@@ -232,11 +247,12 @@ if __name__ == "__main__":
     #splitCVTEDR('/data/fjsdata/CVTEDR/CXR20201210.csv')
     
     #for debug   
-    data_loader_train = get_train_dataloader(batch_size=16, shuffle=True, num_workers=0)
+    data_loader_train = get_train_dataloader(batch_size=20, shuffle=True, num_workers=0)
     for batch_idx, (image, label) in enumerate(data_loader_train):
-         print(image.shape)
-         print(label.shape)
-         break
+        print(batch_idx)
+        print(image.shape)
+        print(label.shape)
+        
     
     
     
