@@ -150,6 +150,7 @@ class CAM(object):
         image = (image + 1).squeeze().permute(1, 2, 0) #[-1,1]->[1, 2]
         image = (image - image.min()) / (image.max() - image.min()) #[1, 2]->[0,1]
         image = np.uint8(255 * image) #[0,1] ->[0,255]
+        
         #feature map
         heat_map = cv2.applyColorMap(np.uint8(cam_img * 255.0), cv2.COLORMAP_JET) #L to RGB
         heat_map = Image.fromarray(heat_map)#.convert('RGB')#PIL.Image
@@ -171,6 +172,19 @@ class CAM(object):
         ax.add_patch(rect)# Add the patch to the Axes
         ax.axis('off')
         fig.savefig('./Imgs/'+str(batch_idx+1)+'_'+class_name+'.png')
+        """
+        image = Image.fromarray(image).convert('RGB')#PIL.Image
+        x2, y2, w, h = np.array(gtbox).astype(int)
+        cropped_roi = image.crop((x2,y2,x2+w,y2+h))
+        width, height = image.size
+        cropped_roi = cropped_roi.resize((width, height),Image.ANTIALIAS)
+        fig, ax = plt.subplots(1)# Create figure and axes
+        ax.imshow(cropped_roi)
+        ax.axis('off')
+        fig.savefig('./Imgs/'+str(batch_idx+1)+'_'+class_name+'.png')
+        """
+
+
 
 
     

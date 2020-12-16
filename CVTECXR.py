@@ -72,6 +72,63 @@ class DatasetGenerator(Dataset):
     def __len__(self):
         return len(self.image_names)
 
+class DatasetGenerator_train(Dataset):
+    def __init__(self, path_to_img_dir, path_to_dataset_file, transform=None):
+        """
+        Args:
+            data_dir: path to image directory.
+            image_list_file: path to the file containing images
+                with corresponding labels.
+            transform: optional transform to be applied on a sample.
+        """
+        image_names = []
+        labels = []
+        with open(path_to_dataset_file, "r") as f:
+            for line in f: 
+                items = line.strip().split(',') 
+                image_name = os.path.join(path_to_img_dir, items[0])
+                if os.path.isfile(image_name) == True:
+                    label = int(eval(items[1])) #eval for 
+                    if label ==0:  #negative
+                        image_names.append(image_name)    
+                        labels.append([1, 0])
+                    elif label == 1: #positive
+                        image_names.append(image_name)    
+                        labels.append([0, 1])
+                    else: continue
+
+        self.image_names = image_names
+        self.labels = labels
+        self.transform = transform
+
+    def __getitem__(self, index):
+        """
+        Args:
+            index: the index of item
+        Returns:
+            image and its labels
+        """
+        try:
+            image_name = self.image_names[index]
+            image = Image.open(image_name).convert('RGB')
+            #image.save('/data/pycode/ChestXRay/Imgs/test.jpeg',"JPEG", quality=95, optimize=True, progressive=True)
+            label = self.labels[index]
+
+            if label[1] == 1: #positive, small sample
+                image = transform_seq_sample(image)
+                label = torch.FloatTensor([label, label, label, label, label]) 
+            else: #negative
+                image = transform_seq_train(image).unsqueeze(0)
+                label = torch.FloatTensor(label).unsqueeze(0)
+            
+        except Exception as e:
+            print("Unable to read file. %s" % e)
+        
+        return image, label
+
+    def __len__(self):
+        return len(self.image_names)
+
 
 #config 
 transform_seq_train = transforms.Compose([
@@ -86,6 +143,12 @@ transform_seq_test = transforms.Compose([
    transforms.ToTensor(),
    transforms.Normalize(mean=[0.485, 0.456, 0.406],std=[0.229, 0.224, 0.225]),
 ])
+transform_seq_sample = transforms.Compose([
+   transforms.Resize((256,256)),
+   transforms.FiveCrop(224),
+   transforms.Lambda(lambda crops: torch.stack([transforms.ToTensor()(crop) for crop in crops])),
+   transforms.Lambda(lambda crops: torch.stack([transforms.Normalize(mean=[0.485, 0.456, 0.406],std=[0.229, 0.224, 0.225])(crop) for crop in crops])),
+])
 
 PATH_TO_IMAGES_DIR = '/data/fjsdata/CVTEDR/images'
 PATH_TO_TRAIN_FILE = '/data/fjsdata/CVTEDR/cxr_train.txt'
@@ -93,8 +156,8 @@ PATH_TO_VAL_FILE = '/data/fjsdata/CVTEDR/cxr_val.txt'
 PATH_TO_TEST_FILE = '/data/fjsdata/CVTEDR/cxr_test.txt'
 
 def get_train_dataloader(batch_size, shuffle, num_workers):
-    dataset_train = DatasetGenerator(path_to_img_dir=PATH_TO_IMAGES_DIR,
-                                     path_to_dataset_file=PATH_TO_TRAIN_FILE, transform=transform_seq_train)
+    dataset_train = DatasetGenerator_train(path_to_img_dir=PATH_TO_IMAGES_DIR,
+                                    path_to_dataset_file=PATH_TO_TRAIN_FILE, transform=transform_seq_train)
     #sampler_train = torch.utils.data.distributed.DistributedSampler(dataset_train) #for multi cpu and multi gpu
     #data_loader_train = DataLoader(dataset=dataset_train, batch_size=batch_size, sampler = sampler_train, 
                                    #shuffle=shuffle, num_workers=num_workers, pin_memory=True)
@@ -247,7 +310,7 @@ if __name__ == "__main__":
     #splitCVTEDR('/data/fjsdata/CVTEDR/CXR20201210.csv')
     
     #for debug   
-    data_loader_train = get_train_dataloader(batch_size=20, shuffle=True, num_workers=0)
+    data_loader_train = get_train_dataloader(batch_size=10, shuffle=True, num_workers=0)
     for batch_idx, (image, label) in enumerate(data_loader_train):
         print(batch_idx)
         print(image.shape)

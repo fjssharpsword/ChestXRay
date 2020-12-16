@@ -21,7 +21,7 @@ from skimage.measure import label
  
 #self-defined
 from CVTECXR import get_train_dataloader, get_validation_dataloader, get_test_dataloader
-from Utils.Evaluation import compute_AUCs, compute_ROCCurve, compute_IoUs
+from Utils.Evaluation import compute_AUCs, compute_ROCCurve, compute_IoUs, compute_fusion
 from Models.CVTEDRNet import CVTEDRNet
 
 #command parameters
@@ -38,7 +38,7 @@ BATCH_SIZE = 256 + 128
 
 def Train():
     print('********************load data********************')
-    dataloader_train = get_train_dataloader(batch_size=BATCH_SIZE, shuffle=True, num_workers=6)
+    dataloader_train = get_train_dataloader(batch_size=1, shuffle=True, num_workers=6)
     dataloader_val = get_validation_dataloader(batch_size=BATCH_SIZE, shuffle=False, num_workers=6)
     print('********************load data succeed!********************')
 
@@ -68,6 +68,8 @@ def Train():
             for batch_idx, (image, label) in enumerate(dataloader_train):
                 optimizer.zero_grad()
                 #forward
+                image = image.squeeze(0)
+                label = label.squeeze(0)
                 var_image = torch.autograd.Variable(image).cuda()
                 var_label = torch.autograd.Variable(label).cuda()
                 var_output = model(var_image)
@@ -121,6 +123,10 @@ def Test():
     # initialize and load the model
     if args.model == 'CVTEDRNet':
         model = CVTEDRNet(num_classes=N_CLASSES, is_pre_trained=True).cuda()#initialize model 
+        CKPT_PATH = './Pre-trained/'+ args.model +'/best_model.pkl'
+        checkpoint = torch.load(CKPT_PATH)
+        model.load_state_dict(checkpoint) #strict=False
+        print("=> loaded Image model checkpoint: "+CKPT_PATH)
     else: 
         print('No required model')
         return #over
@@ -137,7 +143,6 @@ def Test():
             var_image = torch.autograd.Variable(image).cuda()
             var_label = torch.autograd.Variable(label).cuda()
             var_output = model(var_image)
-            loss_tensor = ce_criterion(var_output, var_label) 
             pred = torch.cat((pred, var_output.data), 0)
             gt = torch.cat((gt, label.cuda()), 0)
             sys.stdout.write('\r testing process: = {}'.format(batch_idx+1))

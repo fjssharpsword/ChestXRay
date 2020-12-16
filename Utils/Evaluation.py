@@ -74,6 +74,8 @@ def compute_fusion(gt, pred):
     #pred_np = pred.cpu().numpy()[:,1]
     gt_np = gt.cpu().numpy()[:,1]
     tn, fp, fn, tp = confusion_matrix(gt_np, pred_np).ravel()
+    sen = tp /(tp+fn)
+    spe = tn /(tn+fp)
     return sen, spe
 
 if __name__ == "__main__":
