@@ -23,6 +23,7 @@ from skimage.measure import label
 from CVTECXR import get_train_dataloader, get_validation_dataloader, get_test_dataloader
 from Utils.Evaluation import compute_AUCs, compute_ROCCurve, compute_IoUs, compute_fusion
 from Models.CVTEDRNet import CVTEDRNet
+#from Models.TripletRankingLoss import TripletRankingLoss
 
 #command parameters
 parser = argparse.ArgumentParser(description='For CVTE DR dataset')
@@ -38,7 +39,7 @@ BATCH_SIZE = 256 + 128
 
 def Train():
     print('********************load data********************')
-    dataloader_train = get_train_dataloader(batch_size=1, shuffle=True, num_workers=6)
+    dataloader_train = get_train_dataloader(batch_size=BATCH_SIZE, shuffle=True, num_workers=6)
     dataloader_val = get_validation_dataloader(batch_size=BATCH_SIZE, shuffle=False, num_workers=6)
     print('********************load data succeed!********************')
 
@@ -54,6 +55,7 @@ def Train():
         return #over
     torch.backends.cudnn.benchmark = True  # improve train speed slightly
     ce_criterion = nn.BCELoss() #define binary cross-entropy loss
+    #tr_criterion = TripletRankingLoss()
     print('********************load model succeed!********************')
 
     print('********************begin training!********************')
@@ -68,8 +70,6 @@ def Train():
             for batch_idx, (image, label) in enumerate(dataloader_train):
                 optimizer.zero_grad()
                 #forward
-                image = image.squeeze(0)
-                label = label.squeeze(0)
                 var_image = torch.autograd.Variable(image).cuda()
                 var_label = torch.autograd.Variable(label).cuda()
                 var_output = model(var_image)
@@ -93,7 +93,7 @@ def Train():
                 var_image = torch.autograd.Variable(image).cuda()
                 var_label = torch.autograd.Variable(label).cuda()
                 var_output = model(var_image)
-                loss_tensor = ce_criterion(var_output, var_label) 
+                loss_tensor = ce_criterion(var_output, var_label)
                 pred = torch.cat((pred, var_output.data), 0)
                 gt = torch.cat((gt, label.cuda()), 0)
                 sys.stdout.write('\r Epoch: {} / Step: {} : train loss = {}'.format(epoch+1, batch_idx+1, float('%0.6f'%loss_tensor.item()) ))

@@ -32,19 +32,20 @@ class DatasetGenerator(Dataset):
         """
         image_names = []
         labels = []
-        with open(path_to_dataset_file, "r") as f:
-            for line in f: 
-                items = line.strip().split(',') 
-                image_name = os.path.join(path_to_img_dir, items[0])
-                if os.path.isfile(image_name) == True:
-                    label = int(eval(items[1])) #eval for 
-                    if label ==0:  #negative
-                        image_names.append(image_name)    
-                        labels.append([1, 0])
-                    elif label == 1: #positive
-                        image_names.append(image_name)    
-                        labels.append([0, 1])
-                    else: continue
+        for file_path in path_to_dataset_file:
+            with open(file_path, "r") as f:
+                for line in f: 
+                    items = line.strip().split(',') 
+                    image_name = os.path.join(path_to_img_dir, items[0])
+                    if os.path.isfile(image_name) == True:
+                        label = int(eval(items[1])) #eval for 
+                        if label ==0:  #negative
+                            image_names.append(image_name)    
+                            labels.append([1, 0])
+                        elif label == 1: #positive
+                            image_names.append(image_name)    
+                            labels.append([0, 1])
+                        else: continue
 
         self.image_names = image_names
         self.labels = labels
@@ -83,19 +84,22 @@ class DatasetGenerator_train(Dataset):
         """
         image_names = []
         labels = []
-        with open(path_to_dataset_file, "r") as f:
-            for line in f: 
-                items = line.strip().split(',') 
-                image_name = os.path.join(path_to_img_dir, items[0])
-                if os.path.isfile(image_name) == True:
-                    label = int(eval(items[1])) #eval for 
-                    if label ==0:  #negative
-                        image_names.append(image_name)    
-                        labels.append([1, 0])
-                    elif label == 1: #positive
-                        image_names.append(image_name)    
-                        labels.append([0, 1])
-                    else: continue
+        num_neg = 10000
+        for file_path in path_to_dataset_file:
+            with open(file_path, "r") as f:
+                for line in f: 
+                    items = line.strip().split(',') 
+                    image_name = os.path.join(path_to_img_dir, items[0])
+                    if os.path.isfile(image_name) == True:
+                        label = int(eval(items[1])) #eval for 
+                        if label ==0 and num_neg>0:  #negative
+                            image_names.append(image_name)    
+                            labels.append([1, 0])
+                            num_neg = num_neg -1
+                        elif label == 1: #positive
+                            image_names.append(image_name)    
+                            labels.append([0, 1])
+                        else: continue
 
         self.image_names = image_names
         self.labels = labels
@@ -107,6 +111,7 @@ class DatasetGenerator_train(Dataset):
             index: the index of item
         Returns:
             image and its labels
+        """
         """
         try:
             image_name = self.image_names[index]
@@ -125,6 +130,17 @@ class DatasetGenerator_train(Dataset):
             print("Unable to read file. %s" % e)
         
         return image, label
+        """
+        try:
+            image_name = self.image_names[index]
+            image = Image.open(image_name).convert('RGB')
+            label = self.labels[index]
+            if self.transform is not None:
+                image = self.transform(image)
+        except Exception as e:
+            print("Unable to read file. %s" % e)
+        
+        return image, torch.FloatTensor(label)
 
     def __len__(self):
         return len(self.image_names)
@@ -156,8 +172,8 @@ PATH_TO_VAL_FILE = '/data/fjsdata/CVTEDR/cxr_val.txt'
 PATH_TO_TEST_FILE = '/data/fjsdata/CVTEDR/cxr_test.txt'
 
 def get_train_dataloader(batch_size, shuffle, num_workers):
-    dataset_train = DatasetGenerator_train(path_to_img_dir=PATH_TO_IMAGES_DIR,
-                                    path_to_dataset_file=PATH_TO_TRAIN_FILE, transform=transform_seq_train)
+    dataset_train = DatasetGenerator(path_to_img_dir=PATH_TO_IMAGES_DIR,
+                                    path_to_dataset_file=[PATH_TO_TRAIN_FILE], transform=transform_seq_train)
     #sampler_train = torch.utils.data.distributed.DistributedSampler(dataset_train) #for multi cpu and multi gpu
     #data_loader_train = DataLoader(dataset=dataset_train, batch_size=batch_size, sampler = sampler_train, 
                                    #shuffle=shuffle, num_workers=num_workers, pin_memory=True)
@@ -167,7 +183,7 @@ def get_train_dataloader(batch_size, shuffle, num_workers):
 
 def get_validation_dataloader(batch_size, shuffle, num_workers):
     dataset_validation = DatasetGenerator(path_to_img_dir=PATH_TO_IMAGES_DIR,
-                                          path_to_dataset_file=PATH_TO_VAL_FILE, transform=transform_seq_test)
+                                          path_to_dataset_file=[PATH_TO_VAL_FILE], transform=transform_seq_test)
     data_loader_validation = DataLoader(dataset=dataset_validation, batch_size=batch_size,
                                    shuffle=shuffle, num_workers=num_workers, pin_memory=True)
     return data_loader_validation
@@ -175,7 +191,7 @@ def get_validation_dataloader(batch_size, shuffle, num_workers):
 
 def get_test_dataloader(batch_size, shuffle, num_workers):
     dataset_test = DatasetGenerator(path_to_img_dir=PATH_TO_IMAGES_DIR,
-                                    path_to_dataset_file=PATH_TO_TEST_FILE, transform=transform_seq_test)
+                                    path_to_dataset_file=[PATH_TO_TEST_FILE], transform=transform_seq_test)
     data_loader_test = DataLoader(dataset=dataset_test, batch_size=batch_size,
                                    shuffle=shuffle, num_workers=num_workers, pin_memory=True)
     return data_loader_test

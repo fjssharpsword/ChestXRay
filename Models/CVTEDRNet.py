@@ -32,8 +32,16 @@ class CVTEDRNet(nn.Module):
        
     def forward(self, x):
         #x: N*C*W*H
+        """
         x = self.sa(x) * x
         x = self.dense_net_121(x) 
+        return x
+        """
+        x = self.sa(x) * x
+        x = self.dense_net_121.features(x)
+        x = F.relu(x, inplace=True)
+        x = F.avg_pool2d(x, kernel_size=7, stride=1).view(x.size(0), -1)
+        x = self.dense_net_121.classifier(x)
         return x
         
 class SpatialAttention(nn.Module):#spatial attention module
@@ -54,5 +62,5 @@ if __name__ == "__main__":
     #for debug   
     x = torch.rand(10, 3, 224, 224)#.to(torch.device('cuda:%d'%7))
     model = CVTEDRNet(num_classes=2, is_pre_trained=True)#.to(torch.device('cuda:%d'%7))
-    out = model(x)
+    feat, out = model(x)
     print(out.size())

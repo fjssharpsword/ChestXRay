@@ -68,11 +68,15 @@ def compute_IoUs(xywh1, xywh2):
     return IoUs
 
 def compute_fusion(gt, pred):
-    pred = F.log_softmax(pred, dim=1) 
-    pred = pred.max(1,keepdim=True)[1]
-    pred_np = pred.cpu().numpy()
-    #pred_np = pred.cpu().numpy()[:,1]
-    gt_np = gt.cpu().numpy()[:,1]
+    #pred = F.log_softmax(pred, dim=1) 
+    #pred = pred.max(1,keepdim=True)[1]
+    gt_np = gt.cpu().numpy()[:,1] #positive
+    pred_np = pred.cpu().numpy()[:,1]
+    fpr, tpr, threshold = roc_curve(gt_np, pred_np)
+    auc_score = auc(fpr, tpr)
+    idx = np.where(tpr>auc_score)[0][0]#select the prediction threshold
+    pred_np = np.where(pred_np>threshold[idx], 1, 0)
+    
     tn, fp, fn, tp = confusion_matrix(gt_np, pred_np).ravel()
     sen = tp /(tp+fn)
     spe = tn /(tn+fp)
