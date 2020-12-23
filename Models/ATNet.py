@@ -31,10 +31,11 @@ class ATNet(nn.Module):
         self.dense_net_121 = torchvision.models.densenet121(pretrained=is_pre_trained)
         num_fc_kernels = self.dense_net_121.classifier.in_features #1024
         self.dense_net_121.classifier = nn.Sequential(nn.Linear(num_fc_kernels, num_classes), nn.Sigmoid())
-        self.msa = MultiScaleAttention()
+        #self.msa = MultiScaleAttention()
         #self.rmac = RMAC(level_n=3)
         #self.fc = nn.Conv2d(num_fc_kernels, num_classes, kernel_size=3, padding=1, bias=False)
         #self.sigmoid = nn.Sigmoid()
+        """
         self.fc  = nn.Linear(1024*7*7, num_fc_kernels)
         self.rpn = RegionProposalNetwork(#conv feature 1024*7*7
             1024, 1024,
@@ -45,11 +46,12 @@ class ATNet(nn.Module):
         # RoIAlign layer with crop sizes:
         self.roi_align = RoIAlign(output_size=(ROI_CROP, ROI_CROP), spatial_scale=1.0, sampling_ratio=-1)
         self.roicls = nn.Sequential(nn.Linear(3*ROI_CROP*ROI_CROP, num_classes), nn.Sigmoid())
+        """
         
     def forward(self, x):
         #x: N*C*W*H
     
-        x = self.msa(x) * x
+        #x = self.msa(x) * x
         out = self.dense_net_121(x) 
         return out
         

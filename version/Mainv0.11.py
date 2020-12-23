@@ -19,8 +19,9 @@ import torch.optim as optim
 import torchvision
 from skimage.measure import label
 
-from ChestXRay8 import get_train_dataloader, get_validation_dataloader, get_test_dataloader
-from Utils import compute_AUCs
+from ChestXRay8 import get_train_dataloader, get_validation_dataloader, get_test_dataloader, get_bbox_dataloader
+from Utils.Evaluation import compute_AUCs, compute_IoUs
+from Utils.CAM import CAM
 from Models.DenseNet import DenseNet121
 from Models.ResNet import resnet50
 from Models.SEDenseNet import se_densenet121
@@ -38,7 +39,7 @@ os.environ['CUDA_VISIBLE_DEVICES'] = "0,1,2,3,4,5,6,7"
 CLASS_NAMES = ['Atelectasis', 'Cardiomegaly', 'Effusion', 'Infiltration', 'Mass', 'Nodule', 'Pneumonia', 
                'Pneumothorax', 'Consolidation', 'Edema', 'Emphysema', 'Fibrosis', 'Pleural_Thickening', 'Hernia']
 N_CLASSES = len(CLASS_NAMES)
-MAX_EPOCHS = 20 
+MAX_EPOCHS = 10 
 BATCH_SIZE = 256 + 256 #128
 
 def Train():
@@ -176,10 +177,75 @@ def Test(CKPT_PATH = ''):
         print('The AUROC of {} is {:.4f}'.format(CLASS_NAMES[i], AUROCs[i]))
     print('The average AUROC is {:.4f}'.format(AUROC_avg))
 
+def BoxTest(CKPT_PATH):
+    print('********************load data********************')
+    dataloader_bbox = get_bbox_dataloader(batch_size=1, shuffle=False, num_workers=0)
+    print('********************load data succeed!********************')
+
+    print('********************load model********************')
+    # initialize and load the model
+    if args.model == 'DenseNet':
+        model = DenseNet121(num_classes=N_CLASSES, is_pre_trained=True).cuda()#initialize model
+    elif args.model == 'ResNet':
+        model = resnet50(t_num_classes=N_CLASSES, pretrained=True).cuda()#initialize model
+    elif args.model == 'SEDenseNet':
+        model = se_densenet121(t_num_classes=N_CLASSES, pretrained=True).cuda()#initialize model
+    elif args.model == 'ATNet':
+        model = ATNet(num_classes=N_CLASSES, is_pre_trained=True).cuda()#initialize model 
+    else: 
+        print('No required model')
+        return #over
+
+    #model = nn.DataParallel(model).cuda()  # make model available multi GPU cores training
+    torch.backends.cudnn.benchmark = True  # improve train speed slightly
+    if os.path.isfile(CKPT_PATH):
+        checkpoint = torch.load(CKPT_PATH)
+        model.load_state_dict(checkpoint) #strict=False
+        print("=> loaded model checkpoint: "+CKPT_PATH)
+    print('******************** load model succeed!********************')
+
+    print('******* begin bounding box testing!*********')
+    #np.set_printoptions(suppress=True) #to float
+    #for name, layer in model.named_modules():
+    #    print(name, layer)
+    cls_weights = list(model.parameters())
+    weight_softmax = np.squeeze(cls_weights[-2].data.cpu().numpy())
+    cam = CAM(256,224)
+    IoUs = []
+    IoU_dict = {0:[],1:[],2:[],3:[],4:[],5:[],6:[],7:[]}
+    with torch.autograd.no_grad():
+        for batch_idx, (_, gtbox, image, label) in enumerate(dataloader_bbox):
+            #if batch_idx != 963: continue
+            var_image = torch.autograd.Variable(image).cuda()
+            #out_put = model(var_image) #get feature maps
+            """
+            logit = out_put.cpu().data.numpy().squeeze() #predict
+            idxs = []
+            for i in range(N_CLASSES):
+                if logit[i] > thresholds[i]: #diffrent diseases vary in threshold
+                    idxs.append(i)
+            """
+            var_feature = model.dense_net_121.features(var_image)
+            idx = torch.where(label[0]==1)[0] #true label
+            cam_img = cam.returnCAM(var_feature.cpu().data.numpy(), weight_softmax, idx)
+            pdbox = cam.returnBox(cam_img, gtbox[0].numpy())
+            iou = compute_IoUs(pdbox, gtbox[0].numpy())
+
+            IoU_dict[idx.item()].append(iou)
+            IoUs.append(iou) #compute IoU
+            if iou>0.99: 
+                cam.visHeatmap(batch_idx, CLASS_NAMES[idx], image, cam_img, pdbox, gtbox[0].numpy(), iou) #visulization
+            sys.stdout.write('\r box process: = {}'.format(batch_idx+1))
+            sys.stdout.flush()
+    print('The average IoU is {:.4f}'.format(np.array(IoUs).mean()))
+    for i in range(len(IoU_dict)):
+        print('The average IoU of {} is {:.4f}'.format(CLASS_NAMES[i], np.array(IoU_dict[i]).mean())) 
+
 def main():
-    CKPT_PATH = Train() #for training
-    #CKPT_PATH ='./Pre-trained/'+ args.model +'/best_model.pkl' #for debug
-    Test(CKPT_PATH) #for test
+    #CKPT_PATH = Train() #for training
+    CKPT_PATH ='./Pre-trained/'+ args.model +'/best_model.pkl' #for debug
+    #Test(CKPT_PATH) #for test
+    BoxTest(CKPT_PATH)
 
 if __name__ == '__main__':
     main()

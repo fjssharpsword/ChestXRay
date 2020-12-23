@@ -111,7 +111,8 @@ class ROIGenerator(object):
             feature = feature_conv[i]
             cam = feature.reshape((nc, h*w))
             class_idx = np.where(label[i]==1)[0]
-            if len(class_idx)>0: 
+            #if len(class_idx)>0: 
+            if class_idx==1:
                 cam = weight_softmax[class_idx].dot(cam) #class activated map
             cam = cam.sum(axis=0)
             cam = cam.reshape(h,w)

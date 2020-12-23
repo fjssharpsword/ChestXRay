@@ -20,11 +20,13 @@ import torchvision
 from skimage.measure import label
  
 #self-defined
+from CVTECXR import get_test_dataloader, get_train_dataloader, get_validation_dataloader
 #from ChestXRay8BM import get_test_dataloader, get_train_val_dataloader
-from ChestXRay8 import get_train_dataloader, get_validation_dataloader, get_test_dataloader, get_bbox_dataloader, get_train_dataloader_full
-from Utils.Evaluation import compute_AUCs, compute_ROCCurve, compute_IoUs
+#from ChestXRay8 import get_train_dataloader, get_validation_dataloader, get_test_dataloader, get_bbox_dataloader, get_train_dataloader_full
+from Utils.Evaluation import compute_AUCs, compute_ROCCurve, compute_IoUs, compute_fusion
 from Utils.CAM import CAM
 from Models.SRPNet import CXRClassifier, ROIGenerator, FusionClassifier
+
 
 #command parameters
 parser = argparse.ArgumentParser(description='For ChestXRay')
@@ -32,9 +34,10 @@ parser.add_argument('--model', type=str, default='SRPNet', help='SRPNet')
 args = parser.parse_args()
 
 #config
-os.environ['CUDA_VISIBLE_DEVICES'] = "7" #"0,1,2,3,4,5,6,7"
-CLASS_NAMES = ['Atelectasis', 'Cardiomegaly', 'Effusion', 'Infiltration', 'Mass', 'Nodule', 'Pneumonia', 
-               'Pneumothorax', 'Consolidation', 'Edema', 'Emphysema', 'Fibrosis', 'Pleural_Thickening', 'Hernia']
+os.environ['CUDA_VISIBLE_DEVICES'] = "6" #"0,1,2,3,4,5,6,7"
+#CLASS_NAMES = ['Atelectasis', 'Cardiomegaly', 'Effusion', 'Infiltration', 'Mass', 'Nodule', 'Pneumonia', 
+#              'Pneumothorax', 'Consolidation', 'Edema', 'Emphysema', 'Fibrosis', 'Pleural_Thickening', 'Hernia']
+CLASS_NAMES = ['Negative', 'Positive']
 N_CLASSES = len(CLASS_NAMES)
 MAX_EPOCHS = 10
 BATCH_SIZE = 32 #256 + 256
@@ -170,7 +173,7 @@ def Train():
         if AUROC_best < AUROCs_fusion:
             AUROC_best = AUROCs_fusion
             #torch.save(model.module.state_dict(), CKPT_PATH)
-            torch.save(model_img.state_dict(), './Pre-trained/'+ args.model +'/img_model.pkl') #Saving torch.nn.DataParallel Models
+            torch.save(model_img.state_dict(), './Pre-trained/'+ args.model + '/img_model.pkl') #Saving torch.nn.DataParallel Models
             torch.save(model_roi.state_dict(), './Pre-trained/'+ args.model +'/roi_model.pkl')
             torch.save(model_fusion.state_dict(), './Pre-trained/'+ args.model +'/fusion_model.pkl')
             print(' Epoch: {} model has been already save!'.format(epoch+1))
@@ -268,6 +271,9 @@ def Test():
     thresholds = compute_ROCCurve(gt, pred_fusion, CLASS_NAMES)
     print(thresholds)
 
+    sen, spe = compute_fusion(gt, pred_fusion)
+    print('The Sensitivity is {:.4f} and the specificity is {:.4f}'.format(sen, spe))
+
 def BoxTest():
     print('********************load data********************')
     dataloader_bbox = get_bbox_dataloader(batch_size=1, shuffle=False, num_workers=0)
@@ -296,6 +302,7 @@ def BoxTest():
     weight_softmax = np.squeeze(cls_weights[-5].data.cpu().numpy())
     cam = CAM(256, 224)
     IoUs =[]
+    IoU_dict = {0:[],1:[],2:[],3:[],4:[],5:[],6:[],7:[]}
     with torch.autograd.no_grad():
         for batch_idx, (_, gtbox, image, label) in enumerate(dataloader_bbox):
             #if batch_idx != 963: continue
@@ -312,17 +319,21 @@ def BoxTest():
             cam_img = cam.returnCAM(conv_fea_img.cpu().data.numpy(), weight_softmax, idx)
             pdbox = cam.returnBox(cam_img, gtbox[0].numpy())
             iou = compute_IoUs(pdbox, gtbox[0].numpy())
+
+            IoU_dict[idx.item()].append(iou)
             IoUs.append(iou) #compute IoU
-            if iou>0.9: 
+            if iou>0.99: 
                 cam.visHeatmap(batch_idx, CLASS_NAMES[idx], image, cam_img, pdbox, gtbox[0].numpy()) #visulization
             sys.stdout.write('\r box process: = {}'.format(batch_idx+1))
             sys.stdout.flush()
     print('The average IoU is {:.4f}'.format(np.array(IoUs).mean()))
+    for i in range(len(IoU_dict)):
+        print('The average IoU of {} is {:.4f}'.format(CLASS_NAMES[i], np.array(IoU_dict[i]).mean())) 
 
 def main():
-    #Train() #for training
-    #Test() #for test
-    BoxTest()
+    Train() #for training
+    Test() #for test
+    #BoxTest()
 
 if __name__ == '__main__':
     main()
