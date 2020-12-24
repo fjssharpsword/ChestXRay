@@ -21,7 +21,7 @@ from skimage.measure import label
  
 #self-defined
 from CVTECXR import get_train_dataloader, get_validation_dataloader, get_test_dataloader
-from Utils.Evaluation import compute_AUCs, compute_ROCCurve, compute_IoUs, compute_fusion
+from Utils.Evaluation import compute_AUCs, compute_fusion
 from Models.CVTEDRNet import CVTEDRNet
 #from Models.TripletRankingLoss import TripletRankingLoss
 

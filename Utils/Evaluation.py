@@ -73,7 +73,8 @@ def compute_fusion(gt, pred):
     gt_np = gt.cpu().numpy()[:,1] #positive
     pred_np = pred.cpu().numpy()[:,1]
     fpr, tpr, threshold = roc_curve(gt_np, pred_np)
-    auc_score = auc(fpr, tpr)
+    #auc_score = auc(fpr, tpr)
+    auc_score = 0.90
     idx = np.where(tpr>auc_score)[0][0]#select the prediction threshold
     pred_np = np.where(pred_np>threshold[idx], 1, 0)
     

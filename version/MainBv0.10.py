@@ -17,6 +17,7 @@ import torch.backends.cudnn as cudnn
 from torch.optim import lr_scheduler
 import torch.optim as optim
 import torchvision
+import torch.nn.functional as F
 from skimage.measure import label
  
 #self-defined
@@ -177,6 +178,9 @@ def Train():
             torch.save(model_roi.state_dict(), './Pre-trained/'+ args.model +'/roi_model.pkl')
             torch.save(model_fusion.state_dict(), './Pre-trained/'+ args.model +'/fusion_model.pkl')
             print(' Epoch: {} model has been already save!'.format(epoch+1))
+            #Evaluating the threshold of prediction
+            thresholds = compute_ROCCurve(gt, pred_fusion, CLASS_NAMES)
+            print(thresholds)
 
         time_elapsed = time.time() - since
         print('Training epoch: {} completed in {:.0f}m {:.0f}s'.format(epoch+1, time_elapsed // 60 , time_elapsed % 60))
@@ -225,6 +229,7 @@ def Test():
     model_roi.eval()
     model_fusion.eval()
     cudnn.benchmark = True
+    #classes_threshold = [0.00024280397, 0.004943933]
     with torch.autograd.no_grad():
         for batch_idx, (image, label) in enumerate(dataloader_test):
             gt = torch.cat((gt, label.cuda()), 0)
@@ -236,7 +241,20 @@ def Test():
             #ROI-level
             cls_weights = list(model_img.parameters())
             weight_softmax = np.squeeze(cls_weights[-5].data.cpu().numpy())
-            roi = roigen.ROIGeneration(image, conv_fea_img, weight_softmax, label.numpy())
+            #roi = roigen.ROIGeneration(image, conv_fea_img, weight_softmax, label.numpy())
+            """
+            out_img = out_img.cpu().data.numpy()
+            for i in range(out_img.shape[0]):
+                for j in range(N_CLASSES):   
+                    if out_img[i,j] > classes_threshold[j]:
+                        out_img[i,j] = 1
+                    else: out_img[i,j] = 0
+            roi = roigen.ROIGeneration(image, conv_fea_img, weight_softmax, out_img)
+            """
+            out_img = F.log_softmax(out_img, dim=1) 
+            out_img = out_img.max(1,keepdim=True)[1]
+            roi = roigen.ROIGeneration(image, conv_fea_img, weight_softmax, out_img)
+
             var_roi = torch.autograd.Variable(roi).cuda()
             _, fc_fea_roi, out_roi = model_roi(var_roi)
             pred_roi = torch.cat((pred_roi, out_roi.data), 0)
@@ -266,10 +284,6 @@ def Test():
     for i in range(N_CLASSES):
         print('The AUROC of {} is {:.4f}'.format(CLASS_NAMES[i], AUROC_fusion[i]))
     print('The average AUROC is {:.4f}'.format(AUROC_avg))
-
-    #Evaluating the threshold of prediction
-    thresholds = compute_ROCCurve(gt, pred_fusion, CLASS_NAMES)
-    print(thresholds)
 
     sen, spe = compute_fusion(gt, pred_fusion)
     print('The Sensitivity is {:.4f} and the specificity is {:.4f}'.format(sen, spe))
@@ -331,7 +345,7 @@ def BoxTest():
         print('The average IoU of {} is {:.4f}'.format(CLASS_NAMES[i], np.array(IoU_dict[i]).mean())) 
 
 def main():
-    Train() #for training
+    #Train() #for training
     Test() #for test
     #BoxTest()
 

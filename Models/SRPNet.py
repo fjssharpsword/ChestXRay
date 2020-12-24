@@ -110,10 +110,11 @@ class ROIGenerator(object):
         for i in range(0, bz):
             feature = feature_conv[i]
             cam = feature.reshape((nc, h*w))
-            class_idx = np.where(label[i]==1)[0]
+            #class_idx = np.where(label[i]==1)[0][0]
             #if len(class_idx)>0: 
-            if class_idx==1:
-                cam = weight_softmax[class_idx].dot(cam) #class activated map
+            class_idx = label[i]
+            if class_idx == 1: 
+                cam = np.expand_dims(weight_softmax[class_idx], axis=0).dot(cam) #class activated map
             cam = cam.sum(axis=0)
             cam = cam.reshape(h,w)
             cam = cam - np.min(cam)
