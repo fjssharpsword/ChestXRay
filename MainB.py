@@ -34,7 +34,7 @@ args = parser.parse_args()
 os.environ['CUDA_VISIBLE_DEVICES'] = "0,1,2,3,4,5"
 CLASS_NAMES = ['Negative', 'Positive']
 N_CLASSES = len(CLASS_NAMES)
-MAX_EPOCHS = 20
+MAX_EPOCHS = 10
 BATCH_SIZE = 256 + 128
 
 def Train():
@@ -159,7 +159,7 @@ def Test():
     print('The Sensitivity is {:.4f} and the specificity is {:.4f}'.format(sen, spe))
 
 def main():
-    Train() #for training
+    #Train() #for training
     Test() #for test
 
 if __name__ == '__main__':

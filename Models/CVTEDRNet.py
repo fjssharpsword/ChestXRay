@@ -28,7 +28,7 @@ class CVTEDRNet(nn.Module):
         self.dense_net_121 = torchvision.models.densenet121(pretrained=is_pre_trained)
         num_fc_kernels = self.dense_net_121.classifier.in_features #1024
         self.dense_net_121.classifier = nn.Sequential(nn.Linear(num_fc_kernels, num_classes), nn.Sigmoid())
-        #self.sa = SpatialAttention()
+        self.sa = SpatialAttention()
        
     def forward(self, x):
         #x: N*C*W*H

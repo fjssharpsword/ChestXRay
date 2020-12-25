@@ -73,79 +73,6 @@ class DatasetGenerator(Dataset):
     def __len__(self):
         return len(self.image_names)
 
-class DatasetGenerator_train(Dataset):
-    def __init__(self, path_to_img_dir, path_to_dataset_file, transform=None):
-        """
-        Args:
-            data_dir: path to image directory.
-            image_list_file: path to the file containing images
-                with corresponding labels.
-            transform: optional transform to be applied on a sample.
-        """
-        image_names = []
-        labels = []
-        num_neg = 10000
-        for file_path in path_to_dataset_file:
-            with open(file_path, "r") as f:
-                for line in f: 
-                    items = line.strip().split(',') 
-                    image_name = os.path.join(path_to_img_dir, items[0])
-                    if os.path.isfile(image_name) == True:
-                        label = int(eval(items[1])) #eval for 
-                        if label ==0 and num_neg>0:  #negative
-                            image_names.append(image_name)    
-                            labels.append([1, 0])
-                            num_neg = num_neg -1
-                        elif label == 1: #positive
-                            image_names.append(image_name)    
-                            labels.append([0, 1])
-                        else: continue
-
-        self.image_names = image_names
-        self.labels = labels
-        self.transform = transform
-
-    def __getitem__(self, index):
-        """
-        Args:
-            index: the index of item
-        Returns:
-            image and its labels
-        """
-        """
-        try:
-            image_name = self.image_names[index]
-            image = Image.open(image_name).convert('RGB')
-            #image.save('/data/pycode/ChestXRay/Imgs/test.jpeg',"JPEG", quality=95, optimize=True, progressive=True)
-            label = self.labels[index]
-
-            if label[1] == 1: #positive, small sample
-                image = transform_seq_sample(image)
-                label = torch.FloatTensor([label, label, label, label, label]) 
-            else: #negative
-                image = transform_seq_train(image).unsqueeze(0)
-                label = torch.FloatTensor(label).unsqueeze(0)
-            
-        except Exception as e:
-            print("Unable to read file. %s" % e)
-        
-        return image, label
-        """
-        try:
-            image_name = self.image_names[index]
-            image = Image.open(image_name).convert('RGB')
-            label = self.labels[index]
-            if self.transform is not None:
-                image = self.transform(image)
-        except Exception as e:
-            print("Unable to read file. %s" % e)
-        
-        return image, torch.FloatTensor(label)
-
-    def __len__(self):
-        return len(self.image_names)
-
-
 #config 
 transform_seq_train = transforms.Compose([
    transforms.Resize((256,256)),
@@ -173,7 +100,7 @@ PATH_TO_TEST_FILE = '/data/fjsdata/CVTEDR/cxr_test.txt'
 
 def get_train_dataloader(batch_size, shuffle, num_workers):
     dataset_train = DatasetGenerator(path_to_img_dir=PATH_TO_IMAGES_DIR,
-                                    path_to_dataset_file=[PATH_TO_TRAIN_FILE], transform=transform_seq_train)
+                                    path_to_dataset_file=[PATH_TO_TRAIN_FILE, PATH_TO_VAL_FILE], transform=transform_seq_train)
     #sampler_train = torch.utils.data.distributed.DistributedSampler(dataset_train) #for multi cpu and multi gpu
     #data_loader_train = DataLoader(dataset=dataset_train, batch_size=batch_size, sampler = sampler_train, 
                                    #shuffle=shuffle, num_workers=num_workers, pin_memory=True)
@@ -223,28 +150,6 @@ def CVTEDR_Filter():
     print("\r Num of disease: {}".format(cxr['疾病标识'].value_counts()) )
     #save 
     cxr.to_csv('/data/fjsdata/CVTEDR/CXR20201204.csv', index=False, header=True, sep=',')
-
-def splitCVTEDR(dataset_path):
-    
-    datas = pd.read_csv(dataset_path, sep=',')
-    #datas = datas.drop(datas[datas['label']==3.0].index)
-    datas['label'] = datas['label'].apply(lambda x: 1.0 if x==3.0 else x)
-    print("\r dataset shape: {}".format(datas.shape)) 
-    print("\r dataset distribution: {}".format(datas['label'].value_counts()))
-    images = datas[['name']]
-    labels = datas[['label']]
-    #print("\r CXR Columns: {}".format(datas.columns))
-    X_train, X_test, y_train, y_test = train_test_split(images, labels, test_size=0.20, random_state=11)
-    X_train, X_val, y_train, y_val = train_test_split(X_train, y_train, test_size=0.10, random_state=22)
-    print("\r trainset shape: {}".format(y_train.shape)) 
-    print("\r trainset distribution: {}".format(y_train['label'].value_counts()))
-    print("\r valset shape: {}".format(y_val.shape)) 
-    print("\r trainset distribution: {}".format(y_val['label'].value_counts()))
-    print("\r testset shape: {}".format(y_test.shape)) 
-    print("\r trainset distribution: {}".format(y_test['label'].value_counts()))
-    trainset = pd.concat([X_train, y_train], axis=1).to_csv('/data/fjsdata/CVTEDR/cxr_train.txt', index=False, header=False, sep=',')
-    valset = pd.concat([X_val, y_val], axis=1).to_csv('/data/fjsdata/CVTEDR/cxr_val.txt', index=False, header=False, sep=',')
-    testset = pd.concat([X_test, y_test], axis=1).to_csv('/data/fjsdata/CVTEDR/cxr_test.txt', index=False, header=False, sep=',')
 
 def getDicomImage(dicom_path, dataset_path):
 
@@ -318,12 +223,80 @@ def verfiyImage(dataset_path, image_path):
             print(name) #DR170210009.jpeg  deleted
 
 
+def splitCVTEDR(dataset_path): 
+    
+    datas = pd.read_csv(dataset_path, sep=',')
+    #datas = datas.drop(datas[datas['label']==3.0].index)
+    datas['label'] = datas['label'].apply(lambda x: 1.0 if x==3.0 else x)
+    print("\r dataset shape: {}".format(datas.shape)) 
+    print("\r dataset distribution: {}".format(datas['label'].value_counts()))
+    images = datas[['name']]
+    labels = datas[['label']]
+    #print("\r CXR Columns: {}".format(datas.columns))
+    X_train, X_test, y_train, y_test = train_test_split(images, labels, test_size=0.20, random_state=11)
+    X_train, X_val, y_train, y_val = train_test_split(X_train, y_train, test_size=0.10, random_state=22)
+    print("\r trainset shape: {}".format(y_train.shape)) 
+    print("\r trainset distribution: {}".format(y_train['label'].value_counts()))
+    print("\r valset shape: {}".format(y_val.shape)) 
+    print("\r trainset distribution: {}".format(y_val['label'].value_counts()))
+    print("\r testset shape: {}".format(y_test.shape)) 
+    print("\r trainset distribution: {}".format(y_test['label'].value_counts()))
+    trainset = pd.concat([X_train, y_train], axis=1).to_csv('/data/fjsdata/CVTEDR/cxr_train.txt', index=False, header=False, sep=',')
+    valset = pd.concat([X_val, y_val], axis=1).to_csv('/data/fjsdata/CVTEDR/cxr_val.txt', index=False, header=False, sep=',')
+    testset = pd.concat([X_test, y_test], axis=1).to_csv('/data/fjsdata/CVTEDR/cxr_test.txt', index=False, header=False, sep=',')
+
+def splitCVTEDR2(dataset_path, pos_dataset_path): 
+    #deal with true positive samples
+    pos_datas = pd.read_csv(pos_dataset_path, sep=',',encoding='gbk')
+    print("\r CXR Columns: {}".format(pos_datas.columns))
+    pos_images = pos_datas['图片路径'].tolist()
+    pos_images = [x.split('\\')[-1].split('_')[0]+'.jpeg' for x in pos_images]
+    
+
+    #delete false positive samples
+    datas = pd.read_csv(dataset_path, sep=',')
+    datas_image = datas['name'].tolist()
+    #assert set(datas_image) > set(pos_images) #true, contain
+    pos_images_new = []
+    for pname in pos_images:
+        if pname in datas_image:
+            pos_images_new.append(pname)
+    
+    datas = datas.drop(datas[datas['label']==3.0].index)
+    datas = datas.drop(datas[datas['label']==1.0].index)
+
+    #merge negative and positive sample
+    pos_datas = pd.DataFrame(pos_images_new, columns=['name'])
+    pos_datas['label'] = 1
+
+    datas = datas.sample(n=10*len(pos_datas), random_state=1) #random sampling 10 times for negative
+    datas = pd.concat([datas, pos_datas], axis=0)
+    print("\r dataset shape: {}".format(datas.shape)) 
+    print("\r dataset distribution: {}".format(datas['label'].value_counts()))
+
+    #split train, validation, test
+    images = datas[['name']]
+    labels = datas[['label']]
+    X_train, X_test, y_train, y_test = train_test_split(images, labels, test_size=0.20, random_state=11)
+    X_train, X_val, y_train, y_val = train_test_split(X_train, y_train, test_size=0.10, random_state=22)
+    print("\r trainset shape: {}".format(y_train.shape)) 
+    print("\r trainset distribution: {}".format(y_train['label'].value_counts()))
+    print("\r valset shape: {}".format(y_val.shape)) 
+    print("\r valset distribution: {}".format(y_val['label'].value_counts()))
+    print("\r testset shape: {}".format(y_test.shape)) 
+    print("\r testset distribution: {}".format(y_test['label'].value_counts()))
+    trainset = pd.concat([X_train, y_train], axis=1).to_csv('/data/fjsdata/CVTEDR/cxr_train.txt', index=False, header=False, sep=',')
+    valset = pd.concat([X_val, y_val], axis=1).to_csv('/data/fjsdata/CVTEDR/cxr_val.txt', index=False, header=False, sep=',')
+    testset = pd.concat([X_test, y_test], axis=1).to_csv('/data/fjsdata/CVTEDR/cxr_test.txt', index=False, header=False, sep=',')
+
 if __name__ == "__main__":
 
     #CVTEDR_Filter()
     #getDicomImage('/data/fjsdata/CVTEDR/dicoms', '/data/fjsdata/CVTEDR/CXR20201204.csv')
     #verfiyImage('/data/fjsdata/CVTEDR/CXR20201210.csv', '/data/fjsdata/CVTEDR/images')
-    #splitCVTEDR('/data/fjsdata/CVTEDR/CXR20201210.csv')
+    #splitCVTEDR2('/data/fjsdata/CVTEDR/CXR20201210.csv')
+    #splitCVTEDR2('/data/fjsdata/CVTEDR/CXR20201210.csv', '/data/fjsdata/CVTEDR/CVTE-DR-Pos-954.csv')
+    
     
     #for debug   
     data_loader_train = get_train_dataloader(batch_size=10, shuffle=True, num_workers=0)
@@ -331,6 +304,8 @@ if __name__ == "__main__":
         print(batch_idx)
         print(image.shape)
         print(label.shape)
+    
+    
         
     
     
