@@ -75,8 +75,8 @@ class DatasetGenerator(Dataset):
 
 #config 
 transform_seq_train = transforms.Compose([
-   transforms.Resize((256,256)),
-   transforms.RandomCrop(224),
+   transforms.Resize((256,256)),#256
+   transforms.RandomCrop(224),#224
    transforms.ToTensor(),
    transforms.Normalize(mean=[0.485, 0.456, 0.406],std=[0.229, 0.224, 0.225]),
 ])
@@ -100,7 +100,7 @@ PATH_TO_TEST_FILE = '/data/fjsdata/CVTEDR/cxr_test.txt'
 
 def get_train_dataloader(batch_size, shuffle, num_workers):
     dataset_train = DatasetGenerator(path_to_img_dir=PATH_TO_IMAGES_DIR,
-                                    path_to_dataset_file=[PATH_TO_TRAIN_FILE, PATH_TO_VAL_FILE], transform=transform_seq_train)
+                                    path_to_dataset_file=[PATH_TO_TRAIN_FILE], transform=transform_seq_train)
     #sampler_train = torch.utils.data.distributed.DistributedSampler(dataset_train) #for multi cpu and multi gpu
     #data_loader_train = DataLoader(dataset=dataset_train, batch_size=batch_size, sampler = sampler_train, 
                                    #shuffle=shuffle, num_workers=num_workers, pin_memory=True)
@@ -294,7 +294,7 @@ if __name__ == "__main__":
     #CVTEDR_Filter()
     #getDicomImage('/data/fjsdata/CVTEDR/dicoms', '/data/fjsdata/CVTEDR/CXR20201204.csv')
     #verfiyImage('/data/fjsdata/CVTEDR/CXR20201210.csv', '/data/fjsdata/CVTEDR/images')
-    #splitCVTEDR2('/data/fjsdata/CVTEDR/CXR20201210.csv')
+    #splitCVTEDR('/data/fjsdata/CVTEDR/CXR20201210.csv')
     #splitCVTEDR2('/data/fjsdata/CVTEDR/CXR20201210.csv', '/data/fjsdata/CVTEDR/CVTE-DR-Pos-954.csv')
     
     
