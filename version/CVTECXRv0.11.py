@@ -21,7 +21,7 @@ import PIL.ImageOps
 Dataset: CVTE ChestXRay
 """
 
-class DatasetGenerator(Dataset):
+class DatasetGenerator_Test(Dataset):
     def __init__(self, path_to_img_dir, path_to_dataset_file, transform=None):
         """
         Args:
@@ -63,11 +63,79 @@ class DatasetGenerator(Dataset):
         except Exception as e:
             print("Unable to read file. %s" % e)
         
-        return image, torch.LongTensor(label)
+        return image, torch.FloatTensor(label)
 
     def __len__(self):
         return len(self.image_names)
 
+class DatasetGenerator_Train(Dataset):
+    def __init__(self, path_to_img_dir, path_to_dataset_file, transform=None):
+        """
+        Args:
+            data_dir: path to image directory.
+            image_list_file: path to the file containing images
+                with corresponding labels.
+            transform: optional transform to be applied on a sample.
+        """
+        image_names_pos, image_names_neg = [], []
+        for file_path in path_to_dataset_file:
+            with open(file_path, "r") as f:
+                for line in f: 
+                    items = line.strip().split(',') 
+                    image_name = os.path.join(path_to_img_dir, items[0])
+                    if os.path.isfile(image_name) == True:
+                        label = int(eval(items[1])) #eval for 
+                        if label == 1: #pos_list
+                            image_names_pos.append(image_name)    
+                        else:#neg_list
+                            image_names_neg.append(image_name)    
+ 
+        image_pairs = []
+        label_sim = []
+        for i in range(len(image_names_pos)):
+            neg = random.sample(image_names_neg, 1)[0]
+            image_pairs.append([image_names_pos[i], neg])
+            label_sim.append([0])
+
+            pos = random.sample(image_names_pos, 1)[0]
+            image_pairs.append([image_names_pos[i], pos])
+            label_sim.append([1])
+           
+        for i in range(len(image_names_neg)):
+            neg = random.sample(image_names_neg, 1)[0]
+            image_pairs.append([image_names_neg[i], neg])
+            label_sim.append([1])
+
+            pos = random.sample(image_names_pos, 1)[0]
+            image_pairs.append([image_names_neg[i], pos])
+            label_sim.append([0])
+
+        self.image_pairs = image_pairs
+        self.label_sim = label_sim
+        self.transform = transform
+
+    def __getitem__(self, index):
+        """
+        Args:
+            index: the index of item
+        Returns:
+            image and its labels
+        """
+        try:
+            image_pair = self.image_pairs[index]
+            image_a = Image.open(image_pair[0]).convert('RGB')
+            image_b = Image.open(image_pair[1]).convert('RGB')
+            label = self.label_sim[index]
+            if self.transform is not None:
+                image_a = self.transform(image_a)
+                image_b = self.transform(image_b)
+        except Exception as e:
+            print("Unable to read file. %s" % e)
+        
+        return image_a, image_b, torch.FloatTensor(label)
+
+    def __len__(self):
+        return len(self.label_sim)
 
 #config 
 transform_seq_train = transforms.Compose([
@@ -89,8 +157,8 @@ PATH_TO_VAL_FILE = '/data/fjsdata/CVTEDR/cxr_val.txt'
 PATH_TO_TEST_FILE = '/data/fjsdata/CVTEDR/cxr_test.txt'
 
 def get_train_dataloader(batch_size, shuffle, num_workers):
-    dataset_train = DatasetGenerator(path_to_img_dir=PATH_TO_IMAGES_DIR,
-                                    path_to_dataset_file=[PATH_TO_TRAIN_FILE], transform=transform_seq_train)
+    dataset_train = DatasetGenerator_Train(path_to_img_dir=PATH_TO_IMAGES_DIR,
+                                    path_to_dataset_file=[PATH_TO_TRAIN_FILE, PATH_TO_VAL_FILE], transform=transform_seq_train)
     #sampler_train = torch.utils.data.distributed.DistributedSampler(dataset_train) #for multi cpu and multi gpu
     #data_loader_train = DataLoader(dataset=dataset_train, batch_size=batch_size, sampler = sampler_train, 
                                    #shuffle=shuffle, num_workers=num_workers, pin_memory=True)
@@ -99,74 +167,30 @@ def get_train_dataloader(batch_size, shuffle, num_workers):
     return data_loader_train
 
 def get_validation_dataloader(batch_size, shuffle, num_workers):
-    dataset_validation = DatasetGenerator(path_to_img_dir=PATH_TO_IMAGES_DIR,
-                                          path_to_dataset_file=[PATH_TO_VAL_FILE], transform=transform_seq_test)
+    dataset_validation = DatasetGenerator_Test(path_to_img_dir=PATH_TO_IMAGES_DIR,
+                                          path_to_dataset_file=[PATH_TO_TRAIN_FILE, PATH_TO_VAL_FILE], transform=transform_seq_test)
     data_loader_validation = DataLoader(dataset=dataset_validation, batch_size=batch_size,
                                    shuffle=shuffle, num_workers=num_workers, pin_memory=True)
     return data_loader_validation
 
 
 def get_test_dataloader(batch_size, shuffle, num_workers):
-    dataset_test = DatasetGenerator(path_to_img_dir=PATH_TO_IMAGES_DIR,
+    dataset_test = DatasetGenerator_Test(path_to_img_dir=PATH_TO_IMAGES_DIR,
                                     path_to_dataset_file=[PATH_TO_TEST_FILE], transform=transform_seq_test)
     data_loader_test = DataLoader(dataset=dataset_test, batch_size=batch_size,
                                    shuffle=shuffle, num_workers=num_workers, pin_memory=True)
     return data_loader_test
 
-def splitCVTEDR(dataset_path, pos_dataset_path): 
-    #deal with true positive samples
-    pos_datas = pd.read_csv(pos_dataset_path, sep=',',encoding='gbk')
-    print("\r CXR Columns: {}".format(pos_datas.columns))
-    pos_images = pos_datas['图片路径'].tolist()
-    pos_images = [x.split('\\')[-1].split('_')[0]+'.jpeg' for x in pos_images]
-    
 
-    #delete false positive samples
-    datas = pd.read_csv(dataset_path, sep=',')
-    datas_image = datas['name'].tolist()
-    #assert set(datas_image) > set(pos_images) #true, contain
-    pos_images_new = []
-    for pname in pos_images:
-        if pname in datas_image:
-            pos_images_new.append(pname)
-    
-    datas = datas.drop(datas[datas['label']==3.0].index)
-    datas = datas.drop(datas[datas['label']==1.0].index)
-
-    #merge negative and positive sample
-    pos_datas = pd.DataFrame(pos_images_new, columns=['name'])
-    pos_datas['label'] = 1
-
-    datas = datas.sample(n=10*len(pos_datas), random_state=1) #random sampling 10 times for negative
-    datas = pd.concat([datas, pos_datas], axis=0)
-    print("\r dataset shape: {}".format(datas.shape)) 
-    print("\r dataset distribution: {}".format(datas['label'].value_counts()))
-
-    #split train, validation, test
-    images = datas[['name']]
-    labels = datas[['label']]
-    X_train, X_test, y_train, y_test = train_test_split(images, labels, test_size=0.20, random_state=11)
-    X_train, X_val, y_train, y_val = train_test_split(X_train, y_train, test_size=0.10, random_state=22)
-    print("\r trainset shape: {}".format(y_train.shape)) 
-    print("\r trainset distribution: {}".format(y_train['label'].value_counts()))
-    print("\r valset shape: {}".format(y_val.shape)) 
-    print("\r valset distribution: {}".format(y_val['label'].value_counts()))
-    print("\r testset shape: {}".format(y_test.shape)) 
-    print("\r testset distribution: {}".format(y_test['label'].value_counts()))
-    trainset = pd.concat([X_train, y_train], axis=1).to_csv('/data/fjsdata/CVTEDR/cxr_train.txt', index=False, header=False, sep=',')
-    valset = pd.concat([X_val, y_val], axis=1).to_csv('/data/fjsdata/CVTEDR/cxr_val.txt', index=False, header=False, sep=',')
-    testset = pd.concat([X_test, y_test], axis=1).to_csv('/data/fjsdata/CVTEDR/cxr_test.txt', index=False, header=False, sep=',')
 
 if __name__ == "__main__":
-
-    #generate split lists
-    #splitCVTEDR('/data/fjsdata/CVTEDR/CXR20201210.csv', '/data/fjsdata/CVTEDR/CVTE-DR-Pos-954.csv')
   
     #for debug   
     data_loader_train = get_train_dataloader(batch_size=10, shuffle=True, num_workers=0)
-    for batch_idx, (image, label) in enumerate(data_loader_train):
+    for batch_idx, (image_a, image_b, label) in enumerate(data_loader_train):
         print(batch_idx)
-        print(image.shape)
+        print(image_a.shape)
+        print(image_b.shape)
         print(label.shape)
     
     
