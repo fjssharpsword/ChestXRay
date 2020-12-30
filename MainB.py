@@ -17,8 +17,10 @@ import torch.backends.cudnn as cudnn
 from torch.optim import lr_scheduler
 import torch.optim as optim
 import torchvision
+import torch.nn.functional as F
 from skimage.measure import label
 from sklearn.metrics import accuracy_score, confusion_matrix
+from sklearn.metrics.pairwise import cosine_similarity
 #self-defined
 from CVTECXR import get_train_dataloader, get_validation_dataloader, get_test_dataloader
 from Models.CVTEDRNet import CVTEDRNet
@@ -32,8 +34,8 @@ args = parser.parse_args()
 os.environ['CUDA_VISIBLE_DEVICES'] = "0,1,2,3,4,5"
 CLASS_NAMES = ['Negative', 'Positive']
 N_CLASSES = len(CLASS_NAMES)
-MAX_EPOCHS = 10
-BATCH_SIZE = 128 + 32
+MAX_EPOCHS = 50
+BATCH_SIZE = 128 + 256
 
 def Train():
     print('********************load data********************')
@@ -52,7 +54,7 @@ def Train():
         print('No required model')
         return #over
     torch.backends.cudnn.benchmark = True  # improve train speed slightly
-    ce_criterion = nn.CrossEntropyLoss() #nn.BCELoss() #define binary cross-entropy loss
+    ce_criterion = nn.BCELoss() #define binary cross-entropy loss
     print('********************load model succeed!********************')
 
     print('********************begin training!********************')
@@ -70,7 +72,7 @@ def Train():
                 var_image = torch.autograd.Variable(image).cuda()
                 var_label = torch.autograd.Variable(label).cuda()
                 var_output = model(var_image)
-                loss_tensor = ce_criterion(var_output, var_label.squeeze())
+                loss_tensor = ce_criterion(var_output, var_label)
                 #backward
                 loss_tensor.backward() 
                 optimizer.step()
@@ -83,23 +85,24 @@ def Train():
 
         model.eval() #turn to test mode
         val_loss = []
-        gt = torch.LongTensor().cuda()
+        gt = torch.FloatTensor().cuda()
         pred= torch.FloatTensor().cuda()
         with torch.autograd.no_grad():
             for batch_idx, (image, label) in enumerate(dataloader_val):
                 var_image = torch.autograd.Variable(image).cuda()
                 var_label = torch.autograd.Variable(label).cuda()
                 var_output = model(var_image)
-                loss_tensor = ce_criterion(var_output, var_label.squeeze())
+                loss_tensor = ce_criterion(var_output, var_label)
                 pred = torch.cat((pred, var_output.data), 0)
                 gt = torch.cat((gt, label.cuda()), 0)
-                sys.stdout.write('\r Epoch: {} / Step: {} : train loss = {}'.format(epoch+1, batch_idx+1, float('%0.6f'%loss_tensor.item()) ))
+                sys.stdout.write('\r Epoch: {} / Step: {} : validation loss = {}'.format(epoch+1, batch_idx+1, float('%0.6f'%loss_tensor.item()) ))
                 sys.stdout.flush()
                 val_loss.append(loss_tensor.item())
-        #evaluation     
-        pred = F.log_softmax(pred.cpu().numpy(), dim=1) 
-        pred = pred.max(1,keepdim=True)[1]  
-        acc = accuracy_score(gt.cpu().numpy(), pred)
+        #evaluation  
+        pred_np = pred[:,1].cpu().numpy()
+        gt_np = gt[:,1].cpu().numpy()
+        pred_np = np.where(pred_np>0.5, 1, 0)
+        acc = accuracy_score(gt_np, pred_np)
         print("\r Eopch: %5d validation loss = %.6f, Validataion Accuracy = %.4f" % (epoch + 1, np.mean(val_loss), acc)) 
 
         if acc_best < acc:
@@ -132,7 +135,7 @@ def Test():
     print('******************** load model succeed!********************')
 
     print('******* begin testing!*********')
-    gt = torch.LongTensor().cuda()
+    gt = torch.FloatTensor().cuda()
     pred = torch.FloatTensor().cuda()
     # switch to evaluate mode
     model.eval() #turn to test mode
@@ -147,16 +150,16 @@ def Test():
             sys.stdout.flush()
 
     #for evaluation   
-    gt_np = gt.cpu().numpy()
-    pred_np = pred.cpu().numpy()
-    pred_np = F.log_softmax(pred_np, dim=1) 
-    pred_np = pred_np.max(1,keepdim=True)[1]  
-    acc = accuracy_score(gt_np, pred_np)
-    tn, fp, fn, tp = confusion_matrix(gt_np, pred_np).ravel()
-    sen = tp /(tp+fn)
-    spe = tn /(tn+fp)
-    print("\r Test Accuracy = %.4f" % (acc)) 
-    print('The Sensitivity is {:.4f} and the specificity is {:.4f}'.format(sen, spe))
+    for thr in [0.5, 0.4, 0.3, 0.2, 0.1]: 
+        pred_np = pred[:,1].cpu().numpy()
+        gt_np = gt[:,1].cpu().numpy()
+        pred_np = np.where(pred_np>thr, 1, 0)
+        acc = accuracy_score(gt_np, pred_np)
+        tn, fp, fn, tp = confusion_matrix(gt_np, pred_np).ravel()
+        sen = tp /(tp+fn)
+        spe = tn /(tn+fp)
+        print("\r Threshold = %.4f, Test Accuracy = %.4f" % (thr, acc)) 
+        print('\r Threshold = {:.4f}: the Sensitivity = {:.4f} and the specificity = {:.4f}'.format(thr, sen, spe))
 
 def main():
     Train() #for training

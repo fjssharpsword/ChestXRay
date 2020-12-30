@@ -39,8 +39,13 @@ class DatasetGenerator(Dataset):
                     image_name = os.path.join(path_to_img_dir, items[0])
                     if os.path.isfile(image_name) == True:
                         label = int(eval(items[1])) #eval for 
-                        image_names.append(image_name)    
-                        labels.append([label])
+                        if label ==0:  #negative
+                            image_names.append(image_name)    
+                            labels.append([1, 0])
+                        elif label == 1: #positive
+                            image_names.append(image_name)    
+                            labels.append([0, 1])
+                        else: continue
 
         self.image_names = image_names
         self.labels = labels
@@ -63,7 +68,7 @@ class DatasetGenerator(Dataset):
         except Exception as e:
             print("Unable to read file. %s" % e)
         
-        return image, torch.LongTensor(label)
+        return image, torch.FloatTensor(label)
 
     def __len__(self):
         return len(self.image_names)
@@ -137,7 +142,7 @@ def splitCVTEDR(dataset_path, pos_dataset_path):
     pos_datas = pd.DataFrame(pos_images_new, columns=['name'])
     pos_datas['label'] = 1
 
-    datas = datas.sample(n=10*len(pos_datas), random_state=1) #random sampling 10 times for negative
+    datas = datas.sample(n=2*len(pos_datas), random_state=1) #random sampling 10 times for negative
     datas = pd.concat([datas, pos_datas], axis=0)
     print("\r dataset shape: {}".format(datas.shape)) 
     print("\r dataset distribution: {}".format(datas['label'].value_counts()))
@@ -160,7 +165,7 @@ def splitCVTEDR(dataset_path, pos_dataset_path):
 if __name__ == "__main__":
 
     #generate split lists
-    #splitCVTEDR('/data/fjsdata/CVTEDR/CXR20201210.csv', '/data/fjsdata/CVTEDR/CVTE-DR-Pos-954.csv')
+    splitCVTEDR('/data/fjsdata/CVTEDR/CXR20201210.csv', '/data/fjsdata/CVTEDR/CVTE-DR-Pos-954.csv')
   
     #for debug   
     data_loader_train = get_train_dataloader(batch_size=10, shuffle=True, num_workers=0)
@@ -168,6 +173,7 @@ if __name__ == "__main__":
         print(batch_idx)
         print(image.shape)
         print(label.shape)
+        break
     
     
         
