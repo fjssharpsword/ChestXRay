@@ -162,7 +162,7 @@ def Test():
         print('\r Threshold = {:.4f}: the Sensitivity = {:.4f} and the specificity = {:.4f}'.format(thr, sen, spe))
 
 def main():
-    #Train() #for training
+    Train() #for training
     Test() #for test
 
 if __name__ == '__main__':
