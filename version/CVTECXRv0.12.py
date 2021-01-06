@@ -92,9 +92,10 @@ transform_seq_test = transforms.Compose([
 ])
 
 PATH_TO_IMAGES_DIR = '/data/fjsdata/CVTEDR/images'
-PATH_TO_TRAIN_FILE = '/data/fjsdata/CVTEDR/cxr_train_time.txt'
-PATH_TO_VAL_FILE = '/data/fjsdata/CVTEDR/cxr_val_time.txt'
-PATH_TO_TEST_FILE = '/data/fjsdata/CVTEDR/cxr_test_time.txt'
+PATH_TO_IMAGES_DIR_COM = '/data/fjsdata/NIH-CXR/images/images/'
+PATH_TO_TRAIN_FILE = '/data/fjsdata/CVTEDR/cxr_train.txt'
+PATH_TO_VAL_FILE = '/data/fjsdata/CVTEDR/cxr_val.txt'
+PATH_TO_TEST_FILE = '/data/fjsdata/CVTEDR/cxr_test.txt'
 
 def get_train_dataloader(batch_size, shuffle, num_workers):
     dataset_train = DatasetGenerator(path_to_img_dir=PATH_TO_IMAGES_DIR,
@@ -122,6 +123,17 @@ def get_test_dataloader(batch_size, shuffle, num_workers):
     return data_loader_test
 
 def splitCVTEDR(dataset_path, pos_dataset_path): 
+    """
+    #deal with chest x-ray8 dataset (positive)
+    com_data = pd.read_csv("/data/fjsdata/NIH-CXR/Data_Entry_2017_v2020.csv" , sep=',') #detailed information of images
+    print (com_data.shape)
+    com_data = com_data.drop(com_data[com_data['Finding Labels']=='No Finding'].index)
+    com_data = com_data[['Image Index']]
+    com_data.rename(columns={'Image Index':'name'}, inplace = True)
+    com_data['label']=1
+    com_data['flag'] = 1
+    com_data = com_data.sample(n=20000, random_state=1) #random 20000
+    """
     #deal with true positive samples
     pos_datas = pd.read_csv(pos_dataset_path, sep=',',encoding='gbk')
     print("\r CXR Columns: {}".format(pos_datas.columns))
@@ -148,6 +160,8 @@ def splitCVTEDR(dataset_path, pos_dataset_path):
 
     datas = datas.sample(n=len(pos_datas), random_state=1) #random sampling 1 times for negative
     datas = pd.concat([datas, pos_datas], axis=0)
+    #datas = pd.concat([datas, pos_datas, com_data], axis=0) 
+    #datas = pd.concat([datas, com_data], axis=0)
     print("\r dataset shape: {}".format(datas.shape)) 
     print("\r dataset distribution: {}".format(datas['label'].value_counts()))
 
@@ -162,14 +176,14 @@ def splitCVTEDR(dataset_path, pos_dataset_path):
     print("\r valset distribution: {}".format(y_val['label'].value_counts()))
     print("\r testset shape: {}".format(X_test.shape)) 
     print("\r testset distribution: {}".format(y_test['label'].value_counts()))
-    trainset = pd.concat([X_train, y_train], axis=1).to_csv('/data/fjsdata/CVTEDR/cxr_train_time.txt', index=False, header=False, sep=',')
-    valset = pd.concat([X_val, y_val], axis=1).to_csv('/data/fjsdata/CVTEDR/cxr_val.txt_time', index=False, header=False, sep=',')
-    testset = pd.concat([X_test, y_test], axis=1).to_csv('/data/fjsdata/CVTEDR/cxr_test.txt_time', index=False, header=False, sep=',')
+    trainset = pd.concat([X_train, y_train], axis=1).to_csv('/data/fjsdata/CVTEDR/cxr_train.txt', index=False, header=False, sep=',')
+    valset = pd.concat([X_val, y_val], axis=1).to_csv('/data/fjsdata/CVTEDR/cxr_val.txt', index=False, header=False, sep=',')
+    testset = pd.concat([X_test, y_test], axis=1).to_csv('/data/fjsdata/CVTEDR/cxr_test.txt', index=False, header=False, sep=',')
     
 if __name__ == "__main__":
 
     #generate split lists
-    splitCVTEDR('/data/fjsdata/CVTEDR/CXR20201210.csv', '/data/fjsdata/CVTEDR/CVTE-DR-Pos-954.csv')
+    #splitCVTEDR('/data/fjsdata/CVTEDR/CXR20201210.csv', '/data/fjsdata/CVTEDR/CVTE-DR-Pos-954.csv')
     
     #for debug   
     data_loader_train = get_train_dataloader(batch_size=10, shuffle=True, num_workers=0)

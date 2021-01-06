@@ -31,11 +31,11 @@ parser.add_argument('--model', type=str, default='CVTEDRNet', help='CVTEDRNet')
 args = parser.parse_args()
 
 #config
-os.environ['CUDA_VISIBLE_DEVICES'] = "0,1,2,3,4,5"
+os.environ['CUDA_VISIBLE_DEVICES'] = "7"
 CLASS_NAMES = ['Negative', 'Positive']
 N_CLASSES = len(CLASS_NAMES)
 MAX_EPOCHS = 20
-BATCH_SIZE = 128 + 256
+BATCH_SIZE = 36 #128 + 256
 
 def Train():
     print('********************load data********************')
@@ -47,7 +47,7 @@ def Train():
     # initialize and load the model
     if args.model == 'CVTEDRNet':
         model = CVTEDRNet(num_classes=N_CLASSES, is_pre_trained=True).cuda()#initialize model 
-        model = nn.DataParallel(model).cuda()  # make model available multi GPU cores training
+        #model = nn.DataParallel(model).cuda()  # make model available multi GPU cores training
         optimizer = optim.Adam(model.parameters(), lr=1e-3, betas=(0.9, 0.999), eps=1e-08, weight_decay=1e-5)
         lr_scheduler_model = lr_scheduler.StepLR(optimizer , step_size = 10, gamma = 1)
     else: 
@@ -108,8 +108,8 @@ def Train():
         if acc_best < acc:
             acc_best = acc
             CKPT_PATH = './Pre-trained/'+ args.model +'/best_model.pkl'
-            #torch.save(model.state_dict(), CKPT_PATH)
-            torch.save(model.module.state_dict(), CKPT_PATH) #Saving torch.nn.DataParallel Models
+            torch.save(model.state_dict(), CKPT_PATH)
+            #torch.save(model.module.state_dict(), CKPT_PATH) #Saving torch.nn.DataParallel Models
             print(' Epoch: {} model has been already save!'.format(epoch+1))
 
         time_elapsed = time.time() - since
