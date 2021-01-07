@@ -67,7 +67,7 @@ def Train():
         model.train()  #set model to training mode
         train_loss = []
         with torch.autograd.enable_grad():
-            for batch_idx, (_, image, label) in enumerate(dataloader_train):
+            for batch_idx, (image, label) in enumerate(dataloader_train):
                 optimizer.zero_grad()
                 #forward
                 var_image = torch.autograd.Variable(image).cuda()
@@ -89,7 +89,7 @@ def Train():
         gt = torch.LongTensor().cuda()
         pred= torch.LongTensor().cuda()
         with torch.autograd.no_grad():
-            for batch_idx, (_, image, label) in enumerate(dataloader_val):
+            for batch_idx, (image, label) in enumerate(dataloader_val):
                 var_image = torch.autograd.Variable(image).cuda()
                 var_label = torch.autograd.Variable(label).cuda()
                 var_output = model(var_image)
@@ -142,7 +142,7 @@ def Test():
     # switch to evaluate mode
     model.eval() #turn to test mode
     with torch.autograd.no_grad():
-        for batch_idx, (_, image, label) in enumerate(dataloader_test):
+        for batch_idx, (image, label) in enumerate(dataloader_test):
             var_image = torch.autograd.Variable(image).cuda()
             var_label = torch.autograd.Variable(label).cuda()
             var_output = model(var_image)
