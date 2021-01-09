@@ -79,7 +79,8 @@ class DatasetGenerator(Dataset):
 #config 
 transform_seq_train = transforms.Compose([
    transforms.Resize((256,256)),#256
-   transforms.RandomCrop(224),#224
+   transforms.CenterCrop(224),
+   #transforms.RandomCrop(224),#224
    transforms.ToTensor(),
    transforms.Normalize(mean=[0.485, 0.456, 0.406],std=[0.229, 0.224, 0.225]),
 ])
@@ -130,6 +131,8 @@ def splitCVTEDR(dataset_path, pos_dataset_path):
     #read positive samples and validation
     pos_datas = pd.read_csv(pos_dataset_path, sep=',',encoding='gbk')
     print("\r CXR Columns: {}".format(pos_datas.columns))
+    #pos_datas = pos_datas[pos_datas['12-肺膜增厚']==1]  #select specific disease
+    print("\r shape: {}".format(pos_datas.shape)) 
     pos_images = pos_datas['图片路径'].tolist()
     pos_images = [x.split('\\')[-1].split('_')[0]+'.jpeg' for x in pos_images]
 
@@ -161,6 +164,7 @@ def splitCVTEDR(dataset_path, pos_dataset_path):
             pos_test.append(x)
         else:
             pos_train.append(x)
+
     neg_test, neg_train = [], []
     for x in neg_images:
         if x[2:4]=='20':
@@ -168,7 +172,7 @@ def splitCVTEDR(dataset_path, pos_dataset_path):
         else:
             neg_train.append(x)
     neg_test = random.sample(neg_test, len(pos_test))
-    neg_train = random.sample(neg_train, 2*len(pos_train))
+    neg_train = random.sample(neg_train, len(pos_train))
     #merge positive and negative
     pos_datas_train = pd.DataFrame(pos_train, columns=['name'])
     pos_datas_train['label'] = 1
@@ -191,7 +195,8 @@ def splitCVTEDR(dataset_path, pos_dataset_path):
     #save 
     images = trainset[['name']]
     labels = trainset[['label']]
-    X_train, X_val, y_train, y_val = train_test_split(images, labels, test_size=0.10, random_state=11)
+
+    X_train, X_val, y_train, y_val = train_test_split(images, labels, test_size=0.05, random_state=11)
     print("\r trainset shape: {}".format(X_train.shape)) 
     print("\r trainset distribution: {}".format(y_train['label'].value_counts()))
     print("\r valset shape: {}".format(X_val.shape)) 
@@ -212,7 +217,7 @@ def copyimage(dataset_path):
 if __name__ == "__main__":
 
     #generate split lists
-    #splitCVTEDR('/data/fjsdata/CVTEDR/CXR20201210.csv', '/data/fjsdata/CVTEDR/CVTE-DR-Pos-939.csv')
+    splitCVTEDR('/data/fjsdata/CVTEDR/CXR20201210.csv', '/data/fjsdata/CVTEDR/CVTE-DR-Pos-939.csv')
     #copy image to observe
     #copyimage('/data/fjsdata/CVTEDR/cxr_test_time.txt')
     

@@ -32,11 +32,11 @@ parser.add_argument('--model', type=str, default='CVTEDRNet', help='CVTEDRNet')
 args = parser.parse_args()
 
 #config
-os.environ['CUDA_VISIBLE_DEVICES'] = "7"
+os.environ['CUDA_VISIBLE_DEVICES'] = "6"
 CLASS_NAMES = ['Negative', 'Positive']
 N_CLASSES = len(CLASS_NAMES)
-MAX_EPOCHS = 20
-BATCH_SIZE = 72 #128 + 256
+MAX_EPOCHS = 100#20
+BATCH_SIZE = 72
 
 def Train():
     print('********************load data********************')
@@ -72,7 +72,7 @@ def Train():
                 #forward
                 var_image = torch.autograd.Variable(image).cuda()
                 var_label = torch.autograd.Variable(label).cuda()
-                var_output = model(var_image)
+                _, var_output = model(var_image)
                 loss_tensor = ce_criterion(var_output, var_label.squeeze())
                 #backward
                 loss_tensor.backward() 
@@ -92,7 +92,7 @@ def Train():
             for batch_idx, (_, image, label) in enumerate(dataloader_val):
                 var_image = torch.autograd.Variable(image).cuda()
                 var_label = torch.autograd.Variable(label).cuda()
-                var_output = model(var_image)
+                _, var_output = model(var_image)
                 loss_tensor = ce_criterion(var_output, var_label.squeeze())
                 var_output = F.log_softmax(var_output,dim=1) 
                 var_output = var_output.max(1,keepdim=True)[1]
@@ -108,6 +108,7 @@ def Train():
         print("\r Eopch: %5d validation loss = %.6f, Validataion F1 Score = %.4f" % (epoch + 1, np.mean(val_loss), f1score)) 
 
         if f1_best < f1score:
+        #if True:
             f1_best = f1score
             CKPT_PATH = './Pre-trained/'+ args.model +'/best_model.pkl'
             torch.save(model.state_dict(), CKPT_PATH)
@@ -145,7 +146,7 @@ def Test():
         for batch_idx, (_, image, label) in enumerate(dataloader_test):
             var_image = torch.autograd.Variable(image).cuda()
             var_label = torch.autograd.Variable(label).cuda()
-            var_output = model(var_image)
+            _, var_output = model(var_image)
             var_output = F.log_softmax(var_output,dim=1) 
             var_output = var_output.max(1,keepdim=True)[1]
             pred = torch.cat((pred, var_output.data), 0)
@@ -197,9 +198,70 @@ def Test():
     f1score = f1_score(gt_np, pred_np, average='micro')
     print('\r F1 Score = {:.4f}'.format(f1score))
     """
+
+def Test_CAM():
+    print('********************load data********************')
+    dataloader_test = get_test_dataloader(batch_size=1, shuffle=False, num_workers=0)
+    print('********************load data succeed!********************')
+
+    print('********************load model********************')
+    # initialize and load the model
+    if args.model == 'CVTEDRNet':
+        model = CVTEDRNet(num_classes=N_CLASSES, is_pre_trained=True).cuda()#initialize model 
+        CKPT_PATH = './Pre-trained/'+ args.model +'/best_model.pkl'
+        checkpoint = torch.load(CKPT_PATH)
+        model.load_state_dict(checkpoint) #strict=False
+        print("=> loaded Image model checkpoint: "+CKPT_PATH)
+    else: 
+        print('No required model')
+        return #over
+    torch.backends.cudnn.benchmark = True  # improve train speed slightly
+    print('******************** load model succeed!********************')
+
+    print('******* begin CAM Visualization!*********')
+    cls_weights = list(model.parameters())
+    weight_softmax = np.squeeze(cls_weights[-2].data.cpu().numpy())
+    # switch to evaluate mode
+    model.eval() #turn to test mode
+    with torch.autograd.no_grad():
+        for batch_idx, (name, image, label) in enumerate(dataloader_test):
+            var_image = torch.autograd.Variable(image).cuda()
+            #var_label = torch.autograd.Variable(label).cuda()
+            var_feature, var_output = model(var_image)
+
+            # generate the class activation maps upsample to 224x224
+            gt_label = label.squeeze().item() #ground truth
+            var_output = F.log_softmax(var_output,dim=1) 
+            var_output = var_output.max(1,keepdim=True)[1]
+            pd_label = var_output.squeeze().cpu().item()
+            if gt_label == pd_label and gt_label==1:
+                feature_conv = var_feature.cpu().data.numpy()
+                bz, nc, h, w = feature_conv.shape
+                cam = weight_softmax[gt_label].dot(feature_conv.reshape((nc,h*w)))
+                cam = cam.reshape(h, w)
+                cam = cam - np.min(cam)
+                cam_img = cam / np.max(cam)
+                cam_img = np.uint8(255 * cam_img)
+                cam_img = cv2.resize(cam_img, (224, 224))
+
+                #overlay
+                #raw image 
+                image = (image[0] + 1).squeeze().permute(1, 2, 0) #[-1,1]->[1, 2]
+                image = (image - image.min()) / (image.max() - image.min()) #[1, 2]->[0,1]
+                image = np.uint8(255 * image) #[0,1] ->[0,255]
+            
+                #feature map
+                cam_img = cv2.applyColorMap(np.uint8(cam_img * 255.0), cv2.COLORMAP_JET) #L to RGB
+                output_img = cv2.addWeighted(image, 0.7, cam_img, 0.3, 0)
+                fig, ax = plt.subplots(1)# Create figure and axes
+                ax.imshow(output_img)
+                ax.axis('off')
+                fig.savefig('/data/pycode/ChestXRay/Imgs/'+ 'cam_' + str(gt_label) +'_'+ name[0].split('/')[-1])
+
 def main():
     Train() #for training
     Test() #for test
+    Test_CAM()
 
 if __name__ == '__main__':
     main()
