@@ -98,7 +98,7 @@ PATH_TO_TEST_FILE = '/data/fjsdata/CVTEDR/cxr_test_time.txt'
 
 def get_train_dataloader(batch_size, shuffle, num_workers):
     dataset_train = DatasetGenerator(path_to_img_dir=PATH_TO_IMAGES_DIR,
-                                    path_to_dataset_file=[PATH_TO_TRAIN_FILE], transform=transform_seq_train)
+                                    path_to_dataset_file=[PATH_TO_TRAIN_FILE, PATH_TO_VAL_FILE], transform=transform_seq_train)
     #sampler_train = torch.utils.data.distributed.DistributedSampler(dataset_train) #for multi cpu and multi gpu
     #data_loader_train = DataLoader(dataset=dataset_train, batch_size=batch_size, sampler = sampler_train, 
                                    #shuffle=shuffle, num_workers=num_workers, pin_memory=True)
@@ -171,8 +171,8 @@ def splitCVTEDR(dataset_path, pos_dataset_path):
             neg_test.append(x)
         else:
             neg_train.append(x)
-    neg_test = random.sample(neg_test, len(pos_test))
-    neg_train = random.sample(neg_train, len(pos_train))
+    #neg_test = random.sample(neg_test, len(pos_test))
+    #neg_train = random.sample(neg_train, len(pos_train))
     #merge positive and negative
     pos_datas_train = pd.DataFrame(pos_train, columns=['name'])
     pos_datas_train['label'] = 1
@@ -196,7 +196,7 @@ def splitCVTEDR(dataset_path, pos_dataset_path):
     images = trainset[['name']]
     labels = trainset[['label']]
 
-    X_train, X_val, y_train, y_val = train_test_split(images, labels, test_size=0.05, random_state=11)
+    X_train, X_val, y_train, y_val = train_test_split(images, labels, test_size=0.1, random_state=11)
     print("\r trainset shape: {}".format(X_train.shape)) 
     print("\r trainset distribution: {}".format(y_train['label'].value_counts()))
     print("\r valset shape: {}".format(X_val.shape)) 
