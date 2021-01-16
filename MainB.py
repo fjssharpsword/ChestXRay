@@ -37,22 +37,79 @@ args = parser.parse_args()
 os.environ['CUDA_VISIBLE_DEVICES'] = "6"
 CLASS_NAMES = ['Negative', 'Positive']
 N_CLASSES = len(CLASS_NAMES)
+BATCH_SIZE = 512
+MAX_EPOCHS = 20
+SIM_THRESHOLD = 0.9350
 NUM_CLUSTERS = 256
-BATCH_SIZE = 1024
 
-def Cluster():
+def Train():
     print('********************load data********************')
-    dataloader_train = get_train_dataloader(batch_size=BATCH_SIZE, shuffle=True, num_workers=0)
+    dataloader_train = get_train_dataloader(batch_size=BATCH_SIZE, shuffle=True, num_workers=8)
+    print('********************load data succeed!********************')
+
+    print('********************load model********************')
+    # initialize and load the model
+    if args.model == 'PQNet':
+        model = PQNet().cuda()#initialize model 
+        #model = nn.DataParallel(model).cuda()  # make model available multi GPU cores training
+        optimizer = optim.Adam(model.parameters(), lr=1e-3, betas=(0.9, 0.999), eps=1e-08, weight_decay=1e-5)
+        lr_scheduler_model = lr_scheduler.StepLR(optimizer , step_size = 10, gamma = 1)
+    else: 
+        print('No required model')
+        return #over
+    torch.backends.cudnn.benchmark = True  # improve train speed slightly
+    me_criterion = nn.MSELoss() #regression loss function #nn.BCELoss()
+    print('********************load model succeed!********************')
+
+    print('********************begin training!********************')
+    min_loss = 1.0 #float("inf") 
+    for epoch in range(MAX_EPOCHS):
+        since = time.time()
+        print('Epoch {}/{}'.format(epoch+1 , MAX_EPOCHS))
+        print('-' * 10)
+        model.train()  #set model to training mode
+        train_loss = []
+        with torch.autograd.enable_grad():
+            for batch_idx, (_, image, _) in enumerate(dataloader_train):
+                #forward
+                optimizer.zero_grad()
+                var_image = torch.autograd.Variable(image).cuda()
+                _, var_output = model(var_image)
+                #backward
+                loss_tensor = me_criterion(var_output, var_image)
+                loss_tensor.backward() 
+                optimizer.step()
+                sys.stdout.write('\r Epoch: {} / Step: {} : train loss = {}'.format(epoch+1, batch_idx+1, float('%0.6f'%loss_tensor.item()) ))
+                sys.stdout.flush()       
+                train_loss.append(loss_tensor.item()) 
+        lr_scheduler_model.step()  #about lr and gamma
+        print("\r Eopch: %5d train loss = %.6f" % (epoch + 1, np.mean(train_loss))) 
+
+        if np.mean(train_loss) < min_loss:
+        #if True:
+            min_loss = np.mean(train_loss)
+            CKPT_PATH = './Pre-trained/'+ args.model +'/best_model.pkl'
+            torch.save(model.state_dict(), CKPT_PATH)
+            #torch.save(model.module.state_dict(), CKPT_PATH) #Saving torch.nn.DataParallel Models
+            print(' Epoch: {} model has been already save!'.format(epoch+1))
+
+        time_elapsed = time.time() - since
+        print('Training epoch: {} completed in {:.0f}m {:.0f}s'.format(epoch+1, time_elapsed // 60 , time_elapsed % 60))
+
+def PQTest():
+    print('********************load data********************')
+    dataloader_train = get_train_dataloader(batch_size=BATCH_SIZE, shuffle=False, num_workers=8)
     dataloader_test = get_test_dataloader(batch_size=1, shuffle=False, num_workers=0)
     print('********************load data succeed!********************')
 
     print('********************load model********************')
     # initialize and load the model
     if args.model == 'PQNet':
-        model = PQNet(num_classes=N_CLASSES, is_pre_trained=True).cuda()#initialize model 
-        #model = nn.DataParallel(model).cuda()  # make model available multi GPU cores training
-        optimizer = optim.Adam(model.parameters(), lr=1e-3, betas=(0.9, 0.999), eps=1e-08, weight_decay=1e-5)
-        lr_scheduler_model = lr_scheduler.StepLR(optimizer , step_size = 10, gamma = 1)
+        model = PQNet().cuda()#initialize model 
+        CKPT_PATH = './Pre-trained/'+ args.model +'/best_model.pkl'
+        checkpoint = torch.load(CKPT_PATH)
+        model.load_state_dict(checkpoint) #strict=False
+        print("=> loaded model checkpoint: "+ CKPT_PATH)
     else: 
         print('No required model')
         return #over
@@ -63,91 +120,54 @@ def Cluster():
 
     print('********************begin production quantization!********************')
     #extract features
-    feat = torch.FloatTensor()
+    PQVec = torch.FloatTensor().cuda()
     with torch.autograd.no_grad():
         for batch_idx, (_, image, _) in enumerate(dataloader_train):
+            # convolutional features
             var_image = torch.autograd.Variable(image).cuda()
-            var_output = model(var_image).cpu()
-            feat = torch.cat((feat, var_output), 0)
-            #Bag of Visual Words
-            """
-            i = 0
-            w = 8
-            image = image.squeeze()
-            vws = torch.FloatTensor()
-            while (i + w <= image.size(1)):
-                j = 0
-                while (j + w <= image.size(2)):
-                    vw = image[:, i:i+w, j:j+w]
-                    vws = torch.cat((vws, vw.unsqueeze(0)), 0)
-                    i = i+w
-                    j = j+w
-            vws = vws.view(vws.size(0)*vws.size(1), vws.size(2)*vws.size(3))
-            feat = torch.cat((feat, vws.unsqueeze(0)), 0)
-            """
+            var_vec, _  = model(var_image) 
+            PQVec = torch.cat((PQVec, var_vec.data), 0)
             sys.stdout.write('\r training set process: = {}'.format(batch_idx+1))
             sys.stdout.flush()
-            break
 
     #build codebook
-    feat_np = feat.numpy()
-    codebook = [] 
-    for i in range(feat_np.shape[1]):
-        roi_feat = feat_np[:,i,:].squeeze()
+    #bz*32*49, each image is segmented into 49 grids, each grid is respresented 32 dimensions.
+    PQVec_np = PQVec.cpu().numpy() 
+    PQCodebook = [] 
+    for i in range(PQVec_np.shape[2]):
+        roi_feat = PQVec_np[:,:,i].squeeze()
         kmeans.fit(roi_feat)
-        codebook.append(kmeans.cluster_centers_) 
-        sys.stdout.write('\r codebood indexing process: = {}'.format(i+1))
+        PQCodebook.append(kmeans.cluster_centers_) 
+        sys.stdout.write('\r codebook buliding process: = {}'.format(i+1))
         sys.stdout.flush()
-    codebook_np = np.array(codebook)
+    PQCodebook_np = np.array(PQCodebook) #49*NUM_CLUSTERS*32
+    
     #test
     gt = torch.FloatTensor()
     pred= []
     with torch.autograd.no_grad():
         for batch_idx, (_, image, label) in enumerate(dataloader_test):
             gt = torch.cat((gt, label), 0)
-            """
-            i = 0
-            w = 8
-            image = image.squeeze()
-            vws = torch.FloatTensor()
-            while (i + w <= image.size(1)):
-                j = 0
-                while (j + w <= image.size(2)):
-                    vw = image[:, i:i+w, j:j+w]
-                    vws = torch.cat((vws, vw.unsqueeze(0)), 0)
-                    i = i+w
-                    j = j+w
-            vws = vws.view(vws.size(0)*vws.size(1), vws.size(2)*vws.size(3)) 
-            sim = []
-            for i in range(codebook_np.shape[0]):
-                te_feat = vws[i,:].reshape(1,vws.shape[1]) 
-                roi_feat = codebook_np[i,:] 
-                sim_mat = cosine_similarity(te_feat, roi_feat)
-                sim.append(np.max(sim_mat))
-            if np.mean(sim)<0.9: #abnormaly
-                pred.append(1.0)
-            else:
-                pred.append(0.0) #normal
-            """
+            # convolutional features
             var_image = torch.autograd.Variable(image).cuda()
-            var_output = model(var_image)
-            var_output = var_output.cpu().numpy()
-            sim = []
-            for i in range(codebook_np.shape[0]):
-                roi_feat = codebook_np[i,:] 
-                te_feat = var_output[:,i,:] 
-                sim_mat = cosine_similarity(te_feat, roi_feat)
-                sim.append(np.max(sim_mat))
-            if np.mean(sim)<0.9: #abnormaly
-                pred.append(1.0)
-            else:
+            var_vec, _  = model(var_image) 
+            var_vec = var_vec.cpu().numpy()#1*32*49
+            sim_com = []
+            for i in range(PQCodebook_np.shape[0]):
+                grid_vec = var_vec[:,:,i] #1*32
+                grid_centroid = PQCodebook_np[i,:,:] #NUM_CLUSTERS*32
+                sim_mat = cosine_similarity(grid_vec, grid_centroid)
+                sim_com.append(np.mean(sim_mat)) #np.max(sim_mat)
+            if np.mean(sim_com) > SIM_THRESHOLD: 
                 pred.append(0.0) #normal
-            sys.stdout.write('\r test indexing process: = {}'.format(batch_idx+1))
+            else:
+                pred.append(1.0) #abnormaly
+            sys.stdout.write('\r test set process: = {}'.format(batch_idx+1))
             sys.stdout.flush()
 
     #evaluation
     pred_np = np.array(pred)
-    gt_np = gt.cpu().numpy()
+    gt_np = gt.numpy()
     #F1 = 2 * (precision * recall) / (precision + recall)
     f1score = f1_score(gt_np, pred_np, average='micro')
     print('\r F1 Score = {:.4f}'.format(f1score))
@@ -157,9 +177,9 @@ def Cluster():
     spe = tn /(tn+fp)
     print('\rSensitivity = {:.4f} and specificity = {:.4f}'.format(sen, spe))        
 
-
 def main():
-    Cluster() #for production quantization
+    #Train()
+    PQTest() #for production quantization
 
 if __name__ == '__main__':
     main()

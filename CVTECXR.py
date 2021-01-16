@@ -81,13 +81,13 @@ transform_seq_train = transforms.Compose([
    transforms.CenterCrop(224),
    #transforms.RandomCrop(224),#224
    transforms.ToTensor(),
-   transforms.Normalize(mean=[0.485, 0.456, 0.406],std=[0.229, 0.224, 0.225]),
+   #transforms.Normalize(mean=[0.485, 0.456, 0.406],std=[0.229, 0.224, 0.225]),
 ])
 transform_seq_test = transforms.Compose([
    transforms.Resize((256,256)),
    transforms.CenterCrop(224),
    transforms.ToTensor(),
-   transforms.Normalize(mean=[0.485, 0.456, 0.406],std=[0.229, 0.224, 0.225]),
+   #transforms.Normalize(mean=[0.485, 0.456, 0.406],std=[0.229, 0.224, 0.225]),
 ])
 
 PATH_TO_IMAGES_DIR = '/data/fjsdata/CVTEDR/images'
@@ -167,7 +167,7 @@ def copyimage(dataset_path):
 if __name__ == "__main__":
 
     #generate split lists
-    splitCVTEDR('/data/fjsdata/CVTEDR/CXR20201210.csv', '/data/fjsdata/CVTEDR/CVTE-DR-Pos-939.csv')
+    #splitCVTEDR('/data/fjsdata/CVTEDR/CXR20201210.csv', '/data/fjsdata/CVTEDR/CVTE-DR-Pos-939.csv')
     #copy image to observe
     #copyimage('/data/fjsdata/CVTEDR/cxr_test_time.txt')
     
