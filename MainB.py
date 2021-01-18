@@ -11,6 +11,7 @@ import cv2
 import time
 import argparse
 import numpy as np
+import pandas as pd
 import matplotlib.pyplot as plt
 import torch
 import torch.nn as nn
@@ -24,6 +25,7 @@ from sklearn.metrics import accuracy_score, confusion_matrix, precision_recall_c
 from sklearn.metrics.pairwise import cosine_similarity
 import heapq
 from sklearn.cluster import KMeans
+from sklearn.manifold import TSNE
 #self-defined
 from CVTECXR import get_train_dataloader, get_test_dataloader
 from Models.PQNet import PQNet
@@ -37,10 +39,10 @@ args = parser.parse_args()
 os.environ['CUDA_VISIBLE_DEVICES'] = "6"
 CLASS_NAMES = ['Negative', 'Positive']
 N_CLASSES = len(CLASS_NAMES)
-BATCH_SIZE = 512
+BATCH_SIZE = 256
 MAX_EPOCHS = 20
 SIM_THRESHOLD = 0.9350
-NUM_CLUSTERS = 256
+NUM_CLUSTERS = 5 #32
 
 def Train():
     print('********************load data********************')
@@ -115,7 +117,8 @@ def PQTest():
         return #over
     torch.backends.cudnn.benchmark = True  # improve train speed slightly
     model.eval() #turn to test mode
-    kmeans = KMeans(n_clusters=NUM_CLUSTERS, random_state=0)
+    kmeans = KMeans(n_clusters=NUM_CLUSTERS, random_state=10)
+    tsne = TSNE(n_components=2, init='pca', random_state=11)
     print('********************load model succeed!********************')
 
     print('********************begin production quantization!********************')
@@ -131,16 +134,25 @@ def PQTest():
             sys.stdout.flush()
 
     #build codebook
-    #bz*32*49, each image is segmented into 49 grids, each grid is respresented 32 dimensions.
+    #bz*128*49, each image is segmented into 49 grids, each grid is respresented 128 dimensions.
     PQVec_np = PQVec.cpu().numpy() 
     PQCodebook = [] 
     for i in range(PQVec_np.shape[2]):
         roi_feat = PQVec_np[:,:,i].squeeze()
         kmeans.fit(roi_feat)
         PQCodebook.append(kmeans.cluster_centers_) 
+    
+        #t-sne visualizing the effectiveness of clustering
+        #r1 = pd.Series(kmeans.labels_).value_counts() #number of each cluster
+        #r2 = pd.DataFrame(kmeans.cluster_centers_) #cluseter centroid
+        #r = pd.concat([r2, r1], axis = 1) 
+        #r = pd.concat([roi_feat, pd.Series(kmeans.labels_, index = roi_feat.index)], axis = 1)
+        x_tsne = tsne.fit_transform(roi_feat)
+        ScatterPlot(x_tsne, pd.Series(kmeans.labels_), str(i+1) )
+      
         sys.stdout.write('\r codebook buliding process: = {}'.format(i+1))
         sys.stdout.flush()
-    PQCodebook_np = np.array(PQCodebook) #49*NUM_CLUSTERS*32
+    PQCodebook_np = np.array(PQCodebook) #49*NUM_CLUSTERS*128
     
     #test
     gt = torch.FloatTensor()
@@ -151,14 +163,14 @@ def PQTest():
             # convolutional features
             var_image = torch.autograd.Variable(image).cuda()
             var_vec, _  = model(var_image) 
-            var_vec = var_vec.cpu().numpy()#1*32*49
+            var_vec = var_vec.cpu().numpy()#1*128*49
             sim_com = []
             for i in range(PQCodebook_np.shape[0]):
-                grid_vec = var_vec[:,:,i] #1*32
-                grid_centroid = PQCodebook_np[i,:,:] #NUM_CLUSTERS*32
+                grid_vec = var_vec[:,:,i] #1*128
+                grid_centroid = PQCodebook_np[i,:,:] #NUM_CLUSTERS*128
                 sim_mat = cosine_similarity(grid_vec, grid_centroid)
-                sim_com.append(np.mean(sim_mat)) #np.max(sim_mat)
-            if np.mean(sim_com) > SIM_THRESHOLD: 
+                sim_com.append(np.min(sim_mat)) #np.max(sim_mat), np.mean(sim_mat)
+            if np.min(sim_com) > SIM_THRESHOLD: 
                 pred.append(0.0) #normal
             else:
                 pred.append(1.0) #abnormaly
@@ -175,7 +187,21 @@ def PQTest():
     tn, fp, fn, tp = confusion_matrix(gt_np, pred_np).ravel()
     sen = tp /(tp+fn)
     spe = tn /(tn+fp)
-    print('\rSensitivity = {:.4f} and specificity = {:.4f}'.format(sen, spe))        
+    print('\rSensitivity = {:.4f} and specificity = {:.4f}'.format(sen, spe))  
+
+
+def ScatterPlot(X, y, grid_idx):
+    #X,y:numpy-array
+    classes = len(list(set(y.tolist())))#get number of classes
+    #palette = np.array(sns.color_palette("hls", classes))# choose a color palette with seaborn.
+    color = ['c','y','m','b','g','r']
+    marker = ['o','x','+','*','s']
+    plt.figure(figsize=(8,8))#create a plot
+    for i in range(classes):
+        plt.scatter(X[y == i,0], X[y == i,1], c=color[i], marker=marker[i], label=str(i))
+    plt.axis('off')
+    plt.legend(loc='lower left')
+    plt.savefig("/data/pycode/ChestXRay/Imgs/"+ grid_idx +'_tsne_vis.png', dpi=100) 
 
 def main():
     #Train()
