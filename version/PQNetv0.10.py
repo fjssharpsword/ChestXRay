@@ -23,38 +23,59 @@ from torchvision.ops import RoIAlign
 
 # define ConvAutoencoder architecture
 class PQNet(nn.Module):
-    def __init__(self, grid_vector =128, is_pre_trained=True):
+    def __init__(self):
         super(PQNet, self).__init__()
         ## encoder layers ##
-        self.dense_net_121 = torchvision.models.densenet121(pretrained=is_pre_trained)
+        # conv layer (depth from 3 --> 128), 3x3 kernels
+        self.conv1 = nn.Conv2d(3, 16, 3, padding=1)  
+        # conv layer (depth from 128 --> 256), 3x3 kernels
+        self.conv2 = nn.Conv2d(16, 32, 3, padding=1)
+        # conv layer (depth from 256 --> 512), 3x3 kernels
+        self.conv3 = nn.Conv2d(32, 64, 3, padding=1)
+        # conv layer (depth from 512 --> 1024), 3x3 kernels
+        self.conv4 = nn.Conv2d(64, 128, 3, padding=1)
+        # pooling layer to reduce x-y dims by two; kernel and stride of 2
+        self.pool = nn.AvgPool2d(2, 2)
         
+        #latent layer
+        self.dnpool = nn.MaxPool2d(kernel_size=2, stride=2, return_indices=True)
+        self.uppool = nn.MaxUnpool2d(kernel_size=2, stride=2)
+
         ## decoder layers ##
         ## a kernel of 2 and a stride of 2 will increase the spatial dims by 2
-        self.t_conv1 = nn.ConvTranspose2d(1024, 512, 2, stride=2)
-        self.t_conv2 = nn.ConvTranspose2d(512, 256, 2, stride=2)
-        self.t_conv3 = nn.ConvTranspose2d(256, 128, 2, stride=2)
-        self.t_conv4 = nn.ConvTranspose2d(128, 64, 2, stride=2)
-        self.t_conv5 = nn.ConvTranspose2d(64, 3, 2, stride=2)
+        self.t_conv1 = nn.ConvTranspose2d(128, 64, 2, stride=2)
+        self.t_conv2 = nn.ConvTranspose2d(64, 32, 2, stride=2)
+        self.t_conv3 = nn.ConvTranspose2d(32, 16, 2, stride=2)
+        self.t_conv4 = nn.ConvTranspose2d(16, 3, 2, stride=2)
 
         #common layer
         self.relu = nn.ReLU()
         self.sigmoid = nn.Sigmoid()
         self.msa = MultiScaleAttention()
-        self.staticConv = nn.Conv2d(1024, grid_vector, 3, padding=1)  
 
     def forward(self, x):
-        #x: N*C*W*H
-        x = self.msa(x) * x
-        x = self.dense_net_121.features(x)
-        vec = self.staticConv(x)
-        vec = vec.view(vec.size(0), vec.size(1), vec.size(2)*vec.size(3))
+        ##Attention Layer##
+        x = self.msa(x)*x
 
+        ## encode ##
+        # add hidden layers with relu activation function
+        x = self.pool(self.relu(self.conv1(x)))
+        x = self.pool(self.relu(self.conv2(x)))
+        x = self.pool(self.relu(self.conv3(x)))
+        x = self.pool(self.relu(self.conv4(x))) 
+
+        #latent vector for similarity comparison
+        vec, indices  = self.dnpool(x)
+        x = self.uppool(vec, indices)
+        #vec = vec.view(vec.size(0),-1)
+        vec = vec.view(vec.size(0), vec.size(1), vec.size(2)*vec.size(3))
+        
+        ## decode ##
         # add transpose conv layers, with relu activation function
         x = self.relu(self.t_conv1(x))
         x = self.relu(self.t_conv2(x))
         x = self.relu(self.t_conv3(x))
         x = self.relu(self.t_conv4(x))
-        x = self.relu(self.t_conv5(x))
         # output layer (with sigmoid for scaling from 0 to 1)
         x = self.sigmoid(x)
 

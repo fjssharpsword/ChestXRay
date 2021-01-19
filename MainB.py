@@ -36,13 +36,13 @@ parser.add_argument('--model', type=str, default='PQNet', help='PQNet')
 args = parser.parse_args()
 
 #config
-os.environ['CUDA_VISIBLE_DEVICES'] = "6"
+os.environ['CUDA_VISIBLE_DEVICES'] = "5"
 CLASS_NAMES = ['Negative', 'Positive']
 N_CLASSES = len(CLASS_NAMES)
-BATCH_SIZE = 256
-MAX_EPOCHS = 20
-SIM_THRESHOLD = 0.9350
-NUM_CLUSTERS = 5 #32
+BATCH_SIZE = 64
+MAX_EPOCHS = 100
+SIM_THRESHOLD = 0.95
+NUM_CLUSTERS = 5
 
 def Train():
     print('********************load data********************')
@@ -52,7 +52,7 @@ def Train():
     print('********************load model********************')
     # initialize and load the model
     if args.model == 'PQNet':
-        model = PQNet().cuda()#initialize model 
+        model = PQNet(grid_vector = 128, is_pre_trained=True).cuda()#initialize model 
         #model = nn.DataParallel(model).cuda()  # make model available multi GPU cores training
         optimizer = optim.Adam(model.parameters(), lr=1e-3, betas=(0.9, 0.999), eps=1e-08, weight_decay=1e-5)
         lr_scheduler_model = lr_scheduler.StepLR(optimizer , step_size = 10, gamma = 1)
@@ -107,7 +107,7 @@ def PQTest():
     print('********************load model********************')
     # initialize and load the model
     if args.model == 'PQNet':
-        model = PQNet().cuda()#initialize model 
+        model = PQNet(grid_vector = 128, is_pre_trained=True).cuda()#initialize model 
         CKPT_PATH = './Pre-trained/'+ args.model +'/best_model.pkl'
         checkpoint = torch.load(CKPT_PATH)
         model.load_state_dict(checkpoint) #strict=False
@@ -141,15 +141,15 @@ def PQTest():
         roi_feat = PQVec_np[:,:,i].squeeze()
         kmeans.fit(roi_feat)
         PQCodebook.append(kmeans.cluster_centers_) 
-    
+        """
         #t-sne visualizing the effectiveness of clustering
         #r1 = pd.Series(kmeans.labels_).value_counts() #number of each cluster
         #r2 = pd.DataFrame(kmeans.cluster_centers_) #cluseter centroid
         #r = pd.concat([r2, r1], axis = 1) 
         #r = pd.concat([roi_feat, pd.Series(kmeans.labels_, index = roi_feat.index)], axis = 1)
         x_tsne = tsne.fit_transform(roi_feat)
-        ScatterPlot(x_tsne, pd.Series(kmeans.labels_), str(i+1) )
-      
+        ScatterPlot(x_tsne, pd.Series(kmeans.labels_), str(i+1))
+        """
         sys.stdout.write('\r codebook buliding process: = {}'.format(i+1))
         sys.stdout.flush()
     PQCodebook_np = np.array(PQCodebook) #49*NUM_CLUSTERS*128
@@ -170,6 +170,7 @@ def PQTest():
                 grid_centroid = PQCodebook_np[i,:,:] #NUM_CLUSTERS*128
                 sim_mat = cosine_similarity(grid_vec, grid_centroid)
                 sim_com.append(np.min(sim_mat)) #np.max(sim_mat), np.mean(sim_mat)
+            print(sim_com)
             if np.min(sim_com) > SIM_THRESHOLD: 
                 pred.append(0.0) #normal
             else:
@@ -194,8 +195,8 @@ def ScatterPlot(X, y, grid_idx):
     #X,y:numpy-array
     classes = len(list(set(y.tolist())))#get number of classes
     #palette = np.array(sns.color_palette("hls", classes))# choose a color palette with seaborn.
-    color = ['c','y','m','b','g','r']
-    marker = ['o','x','+','*','s']
+    color = ['c','y','m','b','g','r','w','k']
+    marker = ['o','x','+','*','s','^','p','d']
     plt.figure(figsize=(8,8))#create a plot
     for i in range(classes):
         plt.scatter(X[y == i,0], X[y == i,1], c=color[i], marker=marker[i], label=str(i))
