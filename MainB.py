@@ -22,7 +22,7 @@ import torchvision
 import torch.nn.functional as F
 from skimage.measure import label
 from sklearn.metrics import accuracy_score, confusion_matrix, precision_recall_curve, average_precision_score, f1_score
-from sklearn.metrics.pairwise import cosine_similarity
+from sklearn.metrics.pairwise import cosine_similarity, paired_distances
 import heapq
 from sklearn.cluster import KMeans
 from sklearn.manifold import TSNE
@@ -36,13 +36,13 @@ parser.add_argument('--model', type=str, default='PQNet', help='PQNet')
 args = parser.parse_args()
 
 #config
-os.environ['CUDA_VISIBLE_DEVICES'] = "5"
+os.environ['CUDA_VISIBLE_DEVICES'] = "0"
 CLASS_NAMES = ['Negative', 'Positive']
 N_CLASSES = len(CLASS_NAMES)
 BATCH_SIZE = 64
 MAX_EPOCHS = 100
-SIM_THRESHOLD = 0.95
-NUM_CLUSTERS = 5
+SIM_THRESHOLD = 0.70
+NUM_CLUSTERS = 32 #5
 
 def Train():
     print('********************load data********************')
@@ -168,9 +168,9 @@ def PQTest():
             for i in range(PQCodebook_np.shape[0]):
                 grid_vec = var_vec[:,:,i] #1*128
                 grid_centroid = PQCodebook_np[i,:,:] #NUM_CLUSTERS*128
-                sim_mat = cosine_similarity(grid_vec, grid_centroid)
-                sim_com.append(np.min(sim_mat)) #np.max(sim_mat), np.mean(sim_mat)
-            print(sim_com)
+                sim_mat = cosine_similarity(grid_vec, grid_centroid) #1-paired_distances(grid_vec, grid_centroid)
+                sim_com.append(np.max(sim_mat)) #most similarity
+                #sim_com.append(np.mean(sim_mat))
             if np.min(sim_com) > SIM_THRESHOLD: 
                 pred.append(0.0) #normal
             else:
