@@ -41,8 +41,8 @@ CLASS_NAMES = ['Negative', 'Positive']
 N_CLASSES = len(CLASS_NAMES)
 BATCH_SIZE = 64
 MAX_EPOCHS = 100
-SIM_THRESHOLD = 0.70
-NUM_CLUSTERS = 32 #5
+SIM_THRESHOLD = 0.50
+NUM_CLUSTERS = 8
 
 def Train():
     print('********************load data********************')
@@ -52,15 +52,15 @@ def Train():
     print('********************load model********************')
     # initialize and load the model
     if args.model == 'PQNet':
-        model = PQNet(grid_vector = 128, is_pre_trained=True).cuda()#initialize model 
+        model = PQNet(is_pre_trained=True).cuda()#initialize model 
         #model = nn.DataParallel(model).cuda()  # make model available multi GPU cores training
         optimizer = optim.Adam(model.parameters(), lr=1e-3, betas=(0.9, 0.999), eps=1e-08, weight_decay=1e-5)
         lr_scheduler_model = lr_scheduler.StepLR(optimizer , step_size = 10, gamma = 1)
+        torch.backends.cudnn.benchmark = True  # improve train speed slightly
+        mse_criterion = nn.MSELoss() #regression loss function #nn.BCELoss()
     else: 
         print('No required model')
         return #over
-    torch.backends.cudnn.benchmark = True  # improve train speed slightly
-    me_criterion = nn.MSELoss() #regression loss function #nn.BCELoss()
     print('********************load model succeed!********************')
 
     print('********************begin training!********************')
@@ -76,9 +76,9 @@ def Train():
                 #forward
                 optimizer.zero_grad()
                 var_image = torch.autograd.Variable(image).cuda()
-                _, var_output = model(var_image)
+                var_output = model(var_image)
                 #backward
-                loss_tensor = me_criterion(var_output, var_image)
+                loss_tensor = mse_criterion(var_output, var_image)
                 loss_tensor.backward() 
                 optimizer.step()
                 sys.stdout.write('\r Epoch: {} / Step: {} : train loss = {}'.format(epoch+1, batch_idx+1, float('%0.6f'%loss_tensor.item()) ))
@@ -107,7 +107,7 @@ def PQTest():
     print('********************load model********************')
     # initialize and load the model
     if args.model == 'PQNet':
-        model = PQNet(grid_vector = 128, is_pre_trained=True).cuda()#initialize model 
+        model = PQNet(is_pre_trained=True).cuda()#initialize model 
         CKPT_PATH = './Pre-trained/'+ args.model +'/best_model.pkl'
         checkpoint = torch.load(CKPT_PATH)
         model.load_state_dict(checkpoint) #strict=False
@@ -128,13 +128,14 @@ def PQTest():
         for batch_idx, (_, image, _) in enumerate(dataloader_train):
             # convolutional features
             var_image = torch.autograd.Variable(image).cuda()
-            var_vec, _  = model(var_image) 
+            var_output  = model(var_image) 
+            var_vec = var_output.view(var_output.size(0), var_output.size(1)*var_output.size(2),var_output.size(3))
             PQVec = torch.cat((PQVec, var_vec.data), 0)
             sys.stdout.write('\r training set process: = {}'.format(batch_idx+1))
             sys.stdout.flush()
 
     #build codebook
-    #bz*128*49, each image is segmented into 49 grids, each grid is respresented 128 dimensions.
+    #bz*672*224, each image is segmented into 224 grids, each grid is respresented 3*224=673 dimensions.
     PQVec_np = PQVec.cpu().numpy() 
     PQCodebook = [] 
     for i in range(PQVec_np.shape[2]):
@@ -152,7 +153,7 @@ def PQTest():
         """
         sys.stdout.write('\r codebook buliding process: = {}'.format(i+1))
         sys.stdout.flush()
-    PQCodebook_np = np.array(PQCodebook) #49*NUM_CLUSTERS*128
+    PQCodebook_np = np.array(PQCodebook) #224*NUM_CLUSTERS*673
     
     #test
     gt = torch.FloatTensor()
@@ -162,12 +163,13 @@ def PQTest():
             gt = torch.cat((gt, label), 0)
             # convolutional features
             var_image = torch.autograd.Variable(image).cuda()
-            var_vec, _  = model(var_image) 
-            var_vec = var_vec.cpu().numpy()#1*128*49
+            var_output  = model(var_image) 
+            var_vec = var_output.view(var_output.size(0), var_output.size(1)*var_output.size(2),var_output.size(3)) 
+            var_vec = var_vec.cpu().numpy()#1*673*224
             sim_com = []
             for i in range(PQCodebook_np.shape[0]):
-                grid_vec = var_vec[:,:,i] #1*128
-                grid_centroid = PQCodebook_np[i,:,:] #NUM_CLUSTERS*128
+                grid_vec = var_vec[:,:,i] #1*673
+                grid_centroid = PQCodebook_np[i,:,:] #NUM_CLUSTERS*673
                 sim_mat = cosine_similarity(grid_vec, grid_centroid) #1-paired_distances(grid_vec, grid_centroid)
                 sim_com.append(np.max(sim_mat)) #most similarity
                 #sim_com.append(np.mean(sim_mat))
@@ -205,7 +207,7 @@ def ScatterPlot(X, y, grid_idx):
     plt.savefig("/data/pycode/ChestXRay/Imgs/"+ grid_idx +'_tsne_vis.png', dpi=100) 
 
 def main():
-    #Train()
+    Train()
     PQTest() #for production quantization
 
 if __name__ == '__main__':

@@ -23,9 +23,10 @@ from torchvision.ops import RoIAlign
 
 # define ConvAutoencoder architecture
 class PQNet(nn.Module):
-    def __init__(self, grid_vector =128, is_pre_trained=True):
+    def __init__(self, is_pre_trained=True):
         super(PQNet, self).__init__()
         ## encoder layers ##
+        self.msa = MultiScaleAttention()
         self.dense_net_121 = torchvision.models.densenet121(pretrained=is_pre_trained)
         
         ## decoder layers ##
@@ -35,30 +36,24 @@ class PQNet(nn.Module):
         self.t_conv3 = nn.ConvTranspose2d(256, 128, 2, stride=2)
         self.t_conv4 = nn.ConvTranspose2d(128, 64, 2, stride=2)
         self.t_conv5 = nn.ConvTranspose2d(64, 3, 2, stride=2)
-
-        #common layer
-        self.relu = nn.ReLU()
+        #self.relu = nn.ReLU() #nn.PReLU(num_parameters=1, init=0.25)
         self.sigmoid = nn.Sigmoid()
-        self.msa = MultiScaleAttention()
-        self.staticConv = nn.Conv2d(1024, grid_vector, 3, padding=1)  
 
     def forward(self, x):
         #x: N*C*W*H
+        #encode
         x = self.msa(x) * x
         x = self.dense_net_121.features(x)
-        vec = self.staticConv(x)
-        vec = vec.view(vec.size(0), vec.size(1), vec.size(2)*vec.size(3))
-
-        # add transpose conv layers, with relu activation function
-        x = self.relu(self.t_conv1(x))
-        x = self.relu(self.t_conv2(x))
-        x = self.relu(self.t_conv3(x))
-        x = self.relu(self.t_conv4(x))
-        x = self.relu(self.t_conv5(x))
+        #decode
+        x = self.t_conv1(x)
+        x = self.t_conv2(x)
+        x = self.t_conv3(x)
+        x = self.t_conv4(x)
+        x = self.t_conv5(x)
         # output layer (with sigmoid for scaling from 0 to 1)
         x = self.sigmoid(x)
 
-        return vec, x
+        return x
 
 class MultiScaleAttention(nn.Module):#multi-scal attention module
     def __init__(self):
@@ -94,6 +89,5 @@ if __name__ == "__main__":
     #for debug   
     x = torch.rand(2, 3, 224, 224)#.to(torch.device('cuda:%d'%7))
     model = PQNet()#.to(torch.device('cuda:%d'%7))
-    vec, out = model(x)
-    print(vec.size())
+    out = model(x)
     print(out.size())
