@@ -36,12 +36,12 @@ parser.add_argument('--model', type=str, default='PQNet', help='PQNet')
 args = parser.parse_args()
 
 #config
-os.environ['CUDA_VISIBLE_DEVICES'] = "0"
+os.environ['CUDA_VISIBLE_DEVICES'] = "1"
 CLASS_NAMES = ['Negative', 'Positive']
 N_CLASSES = len(CLASS_NAMES)
 BATCH_SIZE = 64
 MAX_EPOCHS = 100
-SIM_THRESHOLD = 0.50
+SIM_THRESHOLD = 0.95
 NUM_CLUSTERS = 8
 
 def Train():
@@ -123,14 +123,14 @@ def PQTest():
 
     print('********************begin production quantization!********************')
     #extract features
-    PQVec = torch.FloatTensor().cuda()
+    PQVec = torch.FloatTensor()#.cuda()
     with torch.autograd.no_grad():
         for batch_idx, (_, image, _) in enumerate(dataloader_train):
             # convolutional features
             var_image = torch.autograd.Variable(image).cuda()
             var_output  = model(var_image) 
             var_vec = var_output.view(var_output.size(0), var_output.size(1)*var_output.size(2),var_output.size(3))
-            PQVec = torch.cat((PQVec, var_vec.data), 0)
+            PQVec = torch.cat((PQVec, var_vec.cpu().data), 0)
             sys.stdout.write('\r training set process: = {}'.format(batch_idx+1))
             sys.stdout.flush()
 
@@ -207,7 +207,7 @@ def ScatterPlot(X, y, grid_idx):
     plt.savefig("/data/pycode/ChestXRay/Imgs/"+ grid_idx +'_tsne_vis.png', dpi=100) 
 
 def main():
-    Train()
+    #Train()
     PQTest() #for production quantization
 
 if __name__ == '__main__':
