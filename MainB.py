@@ -29,6 +29,7 @@ from sklearn.manifold import TSNE
 #self-defined
 from CVTECXR import get_train_dataloader, get_test_dataloader
 from Models.PQNet import PQNet
+from Models.UNet import UNet
 
 #command parameters
 parser = argparse.ArgumentParser(description='For CVTE DR dataset')
@@ -36,13 +37,13 @@ parser.add_argument('--model', type=str, default='PQNet', help='PQNet')
 args = parser.parse_args()
 
 #config
-os.environ['CUDA_VISIBLE_DEVICES'] = "1"
+os.environ['CUDA_VISIBLE_DEVICES'] = "0"
 CLASS_NAMES = ['Negative', 'Positive']
 N_CLASSES = len(CLASS_NAMES)
 BATCH_SIZE = 64
 MAX_EPOCHS = 100
-SIM_THRESHOLD = 0.95
-NUM_CLUSTERS = 8
+SIM_THRESHOLD = 0.35
+NUM_CLUSTERS = 16
 
 def Train():
     print('********************load data********************')
@@ -112,11 +113,18 @@ def PQTest():
         checkpoint = torch.load(CKPT_PATH)
         model.load_state_dict(checkpoint) #strict=False
         print("=> loaded model checkpoint: "+ CKPT_PATH)
+        model.eval()
+
+        model_unet = UNet(n_channels=3, n_classes=1).cuda()#initialize model 
+        CKPT_PATH = './Pre-trained/'+ args.model +  '/best_unet.pkl'
+        checkpoint = torch.load(CKPT_PATH)
+        model_unet.load_state_dict(checkpoint) #strict=False
+        print("=> loaded well-trained unet model checkpoint: "+CKPT_PATH)
+        model_unet.eval()
     else: 
         print('No required model')
         return #over
     torch.backends.cudnn.benchmark = True  # improve train speed slightly
-    model.eval() #turn to test mode
     kmeans = KMeans(n_clusters=NUM_CLUSTERS, random_state=10)
     tsne = TSNE(n_components=2, init='pca', random_state=11)
     print('********************load model succeed!********************')
@@ -125,18 +133,37 @@ def PQTest():
     #extract features
     PQVec = torch.FloatTensor()#.cuda()
     with torch.autograd.no_grad():
-        for batch_idx, (_, image, _) in enumerate(dataloader_train):
+        for batch_idx, (_, image, mask, _) in enumerate(dataloader_train):
             # convolutional features
             var_image = torch.autograd.Variable(image).cuda()
-            var_output  = model(var_image) 
-            var_vec = var_output.view(var_output.size(0), var_output.size(1)*var_output.size(2),var_output.size(3))
-            PQVec = torch.cat((PQVec, var_vec.cpu().data), 0)
+            var_mask = torch.autograd.Variable(mask).cuda()
+            out_image = model(var_image) 
+            out_mask = model_unet(var_mask)
+            """
+            cam = np.uint8(image[0].permute(2, 1, 0).numpy()* 255.0) 
+            fig, ax = plt.subplots(1)# Create figure and axes
+            ax.imshow(cam)
+            ax.axis('off')
+            fig.savefig('/data/pycode/ChestXRay/Imgs/cam_before.png')
+            """
+            out_mask = out_mask.ge(0.5).float() #0,1 binarization
+            out_mask = out_mask.repeat(1, image.size(1), 1, 1) 
+            out_image = torch.mul(out_image.cpu(), out_mask.cpu()) 
+            """
+            cam = np.uint8(image[0].permute(2, 1, 0).numpy()* 255.0) 
+            fig, ax = plt.subplots(1)# Create figure and axes
+            ax.imshow(cam)
+            ax.axis('off')
+            fig.savefig('/data/pycode/ChestXRay/Imgs/cam_after.png')
+            """
+            out_image = out_image.view(out_image.size(0), out_image.size(1)*out_image.size(2),out_image.size(3))
+            PQVec = torch.cat((PQVec, out_image.cpu().data), 0)
             sys.stdout.write('\r training set process: = {}'.format(batch_idx+1))
             sys.stdout.flush()
 
     #build codebook
     #bz*672*224, each image is segmented into 224 grids, each grid is respresented 3*224=673 dimensions.
-    PQVec_np = PQVec.cpu().numpy() 
+    PQVec_np = PQVec.numpy() 
     PQCodebook = [] 
     for i in range(PQVec_np.shape[2]):
         roi_feat = PQVec_np[:,:,i].squeeze()
@@ -159,13 +186,18 @@ def PQTest():
     gt = torch.FloatTensor()
     pred= []
     with torch.autograd.no_grad():
-        for batch_idx, (_, image, label) in enumerate(dataloader_test):
+        for batch_idx, (_, image, mask, label) in enumerate(dataloader_test):
             gt = torch.cat((gt, label), 0)
             # convolutional features
             var_image = torch.autograd.Variable(image).cuda()
-            var_output  = model(var_image) 
-            var_vec = var_output.view(var_output.size(0), var_output.size(1)*var_output.size(2),var_output.size(3)) 
-            var_vec = var_vec.cpu().numpy()#1*673*224
+            var_mask = torch.autograd.Variable(mask).cuda()
+            out_image = model(var_image) 
+            out_mask = model_unet(var_mask)
+            out_mask = out_mask.ge(0.5).float() #0,1 binarization
+            out_mask = out_mask.repeat(1, image.size(1), 1, 1) 
+            out_image = torch.mul(out_image.cpu(), out_mask.cpu()) 
+            out_image = out_image.view(out_image.size(0), out_image.size(1)*out_image.size(2),out_image.size(3))
+            var_vec = out_image.numpy()#1*673*224
             sim_com = []
             for i in range(PQCodebook_np.shape[0]):
                 grid_vec = var_vec[:,:,i] #1*673

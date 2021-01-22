@@ -63,6 +63,7 @@ class DatasetGenerator(Dataset):
         try:
             image_name = self.image_names[index]
             image = Image.open(image_name).convert('RGB')
+            mask = transform_seq_mask(image)
             #image.save('/data/pycode/ChestXRay/Imgs/test.jpeg',"JPEG", quality=95, optimize=True, progressive=True)
             label = self.labels[index]
             if self.transform is not None:
@@ -70,7 +71,7 @@ class DatasetGenerator(Dataset):
         except Exception as e:
             print("Unable to read file. %s" % e)
         
-        return image_name, image, torch.FloatTensor(label)
+        return image_name, image, mask, torch.FloatTensor(label)
 
     def __len__(self):
         return len(self.image_names)
@@ -88,6 +89,13 @@ transform_seq_test = transforms.Compose([
    transforms.CenterCrop(224),
    transforms.ToTensor(),
    #transforms.Normalize(mean=[0.485, 0.456, 0.406],std=[0.229, 0.224, 0.225]),
+])
+
+transform_seq_mask = transforms.Compose([
+   transforms.Resize((256,256)),
+   transforms.CenterCrop(224),
+   transforms.ToTensor(),
+   transforms.Normalize(mean=[0.485, 0.456, 0.406],std=[0.229, 0.224, 0.225]),
 ])
 
 PATH_TO_IMAGES_DIR = '/data/fjsdata/CVTEDR/images'
