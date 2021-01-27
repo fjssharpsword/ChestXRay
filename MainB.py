@@ -26,8 +26,10 @@ from sklearn.metrics.pairwise import cosine_similarity, paired_distances
 import heapq
 from sklearn.cluster import KMeans
 from sklearn.manifold import TSNE
+from sklearn.decomposition import PCA
 #self-defined
-from CVTECXR import get_train_dataloader, get_test_dataloader
+#from CVTECXR import get_train_dataloader, get_test_dataloader
+from ChestXRayBM_AD import get_train_dataloader, get_test_dataloader
 from Models.PQNet import PQNet
 from Models.UNet import UNet
 
@@ -37,13 +39,14 @@ parser.add_argument('--model', type=str, default='PQNet', help='PQNet')
 args = parser.parse_args()
 
 #config
-os.environ['CUDA_VISIBLE_DEVICES'] = "0"
+os.environ['CUDA_VISIBLE_DEVICES'] = "1"
 CLASS_NAMES = ['Negative', 'Positive']
 N_CLASSES = len(CLASS_NAMES)
 BATCH_SIZE = 64
 MAX_EPOCHS = 100
-SIM_THRESHOLD = 0.35
+SIM_THRESHOLD = 0.25
 NUM_CLUSTERS = 16
+PQ_GRID, PQ_DIM = 112, 112
 
 def Train():
     print('********************load data********************')
@@ -73,7 +76,7 @@ def Train():
         model.train()  #set model to training mode
         train_loss = []
         with torch.autograd.enable_grad():
-            for batch_idx, (_, image, _) in enumerate(dataloader_train):
+            for batch_idx, (image, _, _) in enumerate(dataloader_train):
                 #forward
                 optimizer.zero_grad()
                 var_image = torch.autograd.Variable(image).cuda()
@@ -127,13 +130,14 @@ def PQTest():
     torch.backends.cudnn.benchmark = True  # improve train speed slightly
     kmeans = KMeans(n_clusters=NUM_CLUSTERS, random_state=10)
     tsne = TSNE(n_components=2, init='pca', random_state=11)
+    pca = PCA(n_components=PQ_GRID*PQ_DIM)
     print('********************load model succeed!********************')
 
     print('********************begin production quantization!********************')
     #extract features
     PQVec = torch.FloatTensor()#.cuda()
     with torch.autograd.no_grad():
-        for batch_idx, (_, image, mask, _) in enumerate(dataloader_train):
+        for batch_idx, (image, mask, _) in enumerate(dataloader_train):
             # convolutional features
             var_image = torch.autograd.Variable(image).cuda()
             var_mask = torch.autograd.Variable(mask).cuda()
@@ -156,14 +160,16 @@ def PQTest():
             ax.axis('off')
             fig.savefig('/data/pycode/ChestXRay/Imgs/cam_after.png')
             """
-            out_image = out_image.view(out_image.size(0), out_image.size(1)*out_image.size(2),out_image.size(3))
-            PQVec = torch.cat((PQVec, out_image.cpu().data), 0)
+            out_image = out_image.view(out_image.size(0), -1)
+            PQVec = torch.cat((PQVec, out_image.data), 0)
             sys.stdout.write('\r training set process: = {}'.format(batch_idx+1))
             sys.stdout.flush()
 
     #build codebook
-    #bz*672*224, each image is segmented into 224 grids, each grid is respresented 3*224=673 dimensions.
+    #bz*112*112, each image is segmented into 112 grids, each grid is respresented 112 dimensions.
     PQVec_np = PQVec.numpy() 
+    PQVec_np = pca.fit_transform(PQVec_np) #PCA whitening, 3*224*224->112*112 , can used CNN
+    PQVec_np = PQVec_np.reshape((PQVec_np.shape[0], PQ_GRID, PQ_DIM))
     PQCodebook = [] 
     for i in range(PQVec_np.shape[2]):
         roi_feat = PQVec_np[:,:,i].squeeze()
@@ -180,13 +186,13 @@ def PQTest():
         """
         sys.stdout.write('\r codebook buliding process: = {}'.format(i+1))
         sys.stdout.flush()
-    PQCodebook_np = np.array(PQCodebook) #224*NUM_CLUSTERS*673
+    PQCodebook_np = np.array(PQCodebook) #112*NUM_CLUSTERS*112
     
     #test
     gt = torch.FloatTensor()
     pred= []
     with torch.autograd.no_grad():
-        for batch_idx, (_, image, mask, label) in enumerate(dataloader_test):
+        for batch_idx, (image, mask, label) in enumerate(dataloader_test):
             gt = torch.cat((gt, label), 0)
             # convolutional features
             var_image = torch.autograd.Variable(image).cuda()
@@ -196,12 +202,14 @@ def PQTest():
             out_mask = out_mask.ge(0.5).float() #0,1 binarization
             out_mask = out_mask.repeat(1, image.size(1), 1, 1) 
             out_image = torch.mul(out_image.cpu(), out_mask.cpu()) 
-            out_image = out_image.view(out_image.size(0), out_image.size(1)*out_image.size(2),out_image.size(3))
-            var_vec = out_image.numpy()#1*673*224
+            out_image = out_image.view(out_image.size(0), -1)
+            var_vec = out_image.numpy()#1*3*224*224
+            var_vec = pca.transform(var_vec) #1*112*112
+            var_vec = var_vec.reshape((1, PQ_GRID, PQ_DIM))
             sim_com = []
             for i in range(PQCodebook_np.shape[0]):
-                grid_vec = var_vec[:,:,i] #1*673
-                grid_centroid = PQCodebook_np[i,:,:] #NUM_CLUSTERS*673
+                grid_vec = var_vec[:,:,i] #1*112
+                grid_centroid = PQCodebook_np[i,:,:] #NUM_CLUSTERS*112
                 sim_mat = cosine_similarity(grid_vec, grid_centroid) #1-paired_distances(grid_vec, grid_centroid)
                 sim_com.append(np.max(sim_mat)) #most similarity
                 #sim_com.append(np.mean(sim_mat))
